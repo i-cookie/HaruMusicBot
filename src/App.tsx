@@ -2789,6 +2789,18 @@ const AdminWidget: React.FC = () => {
                                             <div className="flex flex-col justify-center pt-3">
                                                 <div className="flex justify-between items-center gap-4 bg-black/30 border border-white/10 rounded-lg p-3">
                                                     <div>
+                                                        <label className="block text-sm text-white font-medium">同一用户只能同时点一首</label>
+                                                        <span className="text-xs text-gray-500 block mt-1">开启后，用户上一首仍在队列中或正在播放时，新点歌会被拒绝</span>
+                                                    </div>
+                                                    <button onClick={() => setConfig({...config, config: {...config.config, SinglePendingRequestPerUser: !config.config.SinglePendingRequestPerUser}})} className={`w-10 h-6 rounded-full p-1 transition-colors shrink-0 ${config.config.SinglePendingRequestPerUser ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                                                        <div className={`w-4 h-4 rounded-full bg-white transition-transform ${config.config.SinglePendingRequestPerUser ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-col justify-center pt-3">
+                                                <div className="flex justify-between items-center gap-4 bg-black/30 border border-white/10 rounded-lg p-3">
+                                                    <div>
                                                         <label className="block text-sm text-white font-medium">显示播放器当前歌曲</label>
                                                         <span className="text-xs text-gray-500 block mt-1">没有点歌时，以淡蓝色卡片显示主播歌单歌曲</span>
                                                     </div>

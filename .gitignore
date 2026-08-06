@@ -23,6 +23,7 @@ experiments/**/bin/
 experiments/**/obj/
 BiliNCM-Connectors/
 .codex-tests/
+.cache/
 .tmp/
 .playwright-mcp/
 connector-backups/

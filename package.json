@@ -11,6 +11,7 @@
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "build:dev": "tsc && vite build && electron-builder --dir --config.directories.output=dist_electron_dev_1.1.5",
+    "build:local-cache": "powershell -ExecutionPolicy Bypass -File .\\scripts\\build-local-cache.ps1",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "node --test tests/*.test.mjs",
     "preview": "vite preview"

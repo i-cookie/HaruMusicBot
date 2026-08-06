@@ -27,6 +27,7 @@ import {
   normalizeLocalSongRequestMode
 } from './local-test-api-policy';
 import type { LocalSongRequestMode } from './local-test-api-policy';
+import { hasPendingSongRequestByUser } from './song-request-policy';
 import {
   getNeteaseSongCover
 } from './players/netease-player';
@@ -276,6 +277,7 @@ let appConfig: any = {
     PlayerType: 'NCM',
     FoliaToken: '',
     Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 },
+    SinglePendingRequestPerUser: false,
     IdleWaitNext: true,
     ShowPlayerCurrentTrack: true,
     PauseAfterRequests: false,
@@ -295,10 +297,11 @@ function loadConfig() {
       appConfig = { ...appConfig, ...saved };
 
       if (!appConfig.sysConfig) {
-        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
+        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, SinglePendingRequestPerUser: false, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
       }
       if (!['NCM', 'Kugou', 'QQMusic', 'Folia'].includes(appConfig.sysConfig.PlayerType)) appConfig.sysConfig.PlayerType = 'NCM';
       if (appConfig.sysConfig.FoliaToken === undefined) appConfig.sysConfig.FoliaToken = '';
+      if (appConfig.sysConfig.SinglePendingRequestPerUser === undefined) appConfig.sysConfig.SinglePendingRequestPerUser = false;
       if (appConfig.sysConfig.ShowPlayerCurrentTrack === undefined) appConfig.sysConfig.ShowPlayerCurrentTrack = true;
       if (appConfig.sysConfig.PauseAfterRequests === undefined) appConfig.sysConfig.PauseAfterRequests = false;
       if (!['bili_avatar', 'song_cover'].includes(appConfig.sysConfig.RequestedSongArtwork)) appConfig.sysConfig.RequestedSongArtwork = 'bili_avatar';
@@ -1696,6 +1699,22 @@ async function tryRequestSong(
       keyword = 'missing you 具岛直子';
     }
 
+    if (
+      mode === 'normal'
+      && appConfig.sysConfig?.SinglePendingRequestPerUser === true
+      && hasPendingSongRequestByUser(user.uid, targetQueue, currentPlayingSong)
+    ) {
+      const message = '你的上一首点歌仍在队列中或正在播放，请等待播完后再点';
+      setGlobalStatus(`⚠️ ${message}`);
+      await addReject(user, message);
+      return {
+        success: false,
+        mode,
+        keyword,
+        message
+      };
+    }
+
     const playerKey = getSelectedPlayerKey();
     const track = (await playerManager.search(keyword))[0];
 
@@ -2857,6 +2876,7 @@ function startBackendServer() {
         }
         if (!['NCM', 'Kugou', 'QQMusic', 'Folia'].includes(appConfig.sysConfig?.PlayerType)) appConfig.sysConfig.PlayerType = 'NCM';
         if (appConfig.sysConfig.FoliaToken === undefined) appConfig.sysConfig.FoliaToken = '';
+        if (appConfig.sysConfig.SinglePendingRequestPerUser === undefined) appConfig.sysConfig.SinglePendingRequestPerUser = false;
         appConfig.sysConfig.ExternalApiPort = getExternalApiPort();
         delete appConfig.sysConfig.EnableCDP;
         delete appConfig.sysConfig.CdpPort;
