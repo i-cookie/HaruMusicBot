@@ -301,7 +301,7 @@ const SuccessBannerOverlay: React.FC = () => {
                     : 720;
                 bannerThemeRef.current = json.overlayNoticeTheme === 'light' ? 'light' : 'dark';
                 const nextOpacity = Number(json.overlayNoticeOpacity);
-                bannerOpacityRef.current = Number.isFinite(nextOpacity) && nextOpacity >= 0.35
+                bannerOpacityRef.current = Number.isFinite(nextOpacity) && nextOpacity >= 0
                     ? Math.min(1, nextOpacity)
                     : 0.94;
                 const successes: OverlayNotice[] = Array.isArray(json.successes) ? json.successes : [];
@@ -354,45 +354,60 @@ const SuccessBannerOverlay: React.FC = () => {
                             ? 'bannerDropIn 320ms cubic-bezier(0.22, 1, 0.36, 1) forwards'
                             : `bannerRetract ${bannerExitMs}ms cubic-bezier(0.4, 0, 1, 1) forwards`;
                         const isLightTheme = bannerThemeRef.current === 'light';
-                        const alpha = bannerOpacityRef.current;
+                        const alpha = Math.min(1, Math.max(0, bannerOpacityRef.current));
+                        const isSuccess = notice.kind === 'success';
                         const containerStyle = isLightTheme
                             ? {
-                                background: notice.kind === 'success'
-                                    ? `linear-gradient(180deg, rgba(247,255,251,${alpha}), rgba(231,250,241,${Math.max(0.2, alpha - 0.08)}))`
-                                    : `linear-gradient(180deg, rgba(255,248,248,${alpha}), rgba(255,236,236,${Math.max(0.2, alpha - 0.08)}))`,
-                                borderColor: notice.kind === 'success'
-                                    ? 'rgba(52, 211, 153, 0.34)'
-                                    : 'rgba(248, 113, 113, 0.34)',
-                                boxShadow: notice.kind === 'success'
-                                    ? '0 22px 50px rgba(20, 83, 45, 0.18)'
-                                    : '0 22px 50px rgba(127, 29, 29, 0.18)',
+                                background: `rgba(255, 255, 255, ${alpha})`,
+                                borderColor: isSuccess
+                                    ? `rgba(16, 185, 129, ${0.34 + alpha * 0.46})`
+                                    : `rgba(244, 63, 94, ${0.34 + alpha * 0.46})`,
+                                boxShadow: isSuccess
+                                    ? `0 14px 34px rgba(5, 150, 105, ${alpha * 0.2}), 0 3px 10px rgba(15, 23, 42, ${alpha * 0.08})`
+                                    : `0 14px 34px rgba(225, 29, 72, ${alpha * 0.2}), 0 3px 10px rgba(15, 23, 42, ${alpha * 0.08})`,
                                 color: '#111827'
                             }
                             : {
-                                background: notice.kind === 'success'
-                                    ? `linear-gradient(180deg, rgba(16,40,32,${alpha}), rgba(8,16,13,${Math.max(0.2, alpha - 0.08)}))`
-                                    : `linear-gradient(180deg, rgba(52,20,24,${alpha}), rgba(20,8,11,${Math.max(0.2, alpha - 0.08)}))`,
-                                borderColor: notice.kind === 'success'
-                                    ? 'rgba(110, 231, 183, 0.2)'
-                                    : 'rgba(252, 165, 165, 0.2)',
-                                boxShadow: notice.kind === 'success'
-                                    ? '0 22px 50px rgba(0,0,0,0.45)'
-                                    : '0 22px 50px rgba(0,0,0,0.5)',
+                                background: isSuccess
+                                    ? `linear-gradient(135deg, rgba(6, 31, 25, ${alpha}), rgba(15, 23, 42, ${alpha * 0.98}))`
+                                    : `linear-gradient(135deg, rgba(48, 12, 22, ${alpha}), rgba(15, 23, 42, ${alpha * 0.98}))`,
+                                borderColor: isSuccess
+                                    ? `rgba(52, 211, 153, ${0.34 + alpha * 0.46})`
+                                    : `rgba(251, 113, 133, ${0.34 + alpha * 0.46})`,
+                                boxShadow: `0 16px 38px rgba(0, 0, 0, ${alpha * 0.46})`,
                                 color: '#ffffff'
                             };
-                        const accentStyle = {
-                            backgroundColor: notice.kind === 'success'
-                                ? (isLightTheme ? 'rgba(16, 185, 129, 0.28)' : 'rgba(167, 243, 208, 0.25)')
-                                : (isLightTheme ? 'rgba(239, 68, 68, 0.26)' : 'rgba(254, 202, 202, 0.25)')
+                        const accentColor = isSuccess ? '#10b981' : '#f43f5e';
+                        const accentSoftColor = isSuccess
+                            ? (isLightTheme ? 'rgba(16, 185, 129, 0.12)' : 'rgba(52, 211, 153, 0.16)')
+                            : (isLightTheme ? 'rgba(244, 63, 94, 0.12)' : 'rgba(251, 113, 133, 0.16)');
+                        const accentRailStyle = {
+                            background: isSuccess
+                                ? 'linear-gradient(180deg, #34d399, #059669)'
+                                : 'linear-gradient(180deg, #fb7185, #e11d48)',
+                            opacity: 1
                         };
                         const avatarFrameStyle = {
-                            borderColor: isLightTheme ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255,255,255,0.15)',
-                            backgroundColor: isLightTheme ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.08)'
+                            borderColor: isLightTheme ? 'rgba(15, 23, 42, 0.12)' : 'rgba(255, 255, 255, 0.2)',
+                            backgroundColor: isLightTheme
+                                ? '#ffffff'
+                                : 'rgba(255, 255, 255, 0.1)',
+                            boxShadow: isLightTheme ? '0 3px 10px rgba(15, 23, 42, 0.12)' : '0 3px 12px rgba(0, 0, 0, 0.3)'
                         };
-                        const metaTextClass = isLightTheme ? 'text-slate-500' : 'text-white/45';
-                        const lineStyle = { backgroundColor: isLightTheme ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255,255,255,0.08)' };
-                        const bodyTextClass = isLightTheme ? 'text-slate-900' : 'text-white';
-                        const tagText = notice.kind === 'success' ? 'REQUEST ACCEPTED' : 'REQUEST REJECTED';
+                        const statusBadgeStyle = {
+                            color: isSuccess
+                                ? (isLightTheme ? '#047857' : '#a7f3d0')
+                                : (isLightTheme ? '#be123c' : '#fecdd3'),
+                            backgroundColor: accentSoftColor
+                        };
+                        const queueBadgeStyle = {
+                            color: isLightTheme ? '#475569' : '#cbd5e1',
+                            backgroundColor: isLightTheme ? 'rgba(255, 255, 255, 0.78)' : 'rgba(255, 255, 255, 0.08)',
+                            borderColor: isLightTheme ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.1)'
+                        };
+                        const bodyTextClass = isLightTheme ? 'text-slate-800' : 'text-slate-50';
+                        const statusTitle = isSuccess ? '\u70b9\u6b4c\u6210\u529f' : '\u70b9\u6b4c\u5931\u8d25';
+                        const queueLabel = aheadCount > 0 ? `\u524d\u65b9 ${aheadCount} \u9996` : '\u5373\u5c06\u64ad\u653e';
 
                         return (
                             <div
@@ -402,11 +417,16 @@ const SuccessBannerOverlay: React.FC = () => {
                                     width: `min(${bannerWidthPxRef.current}px, calc(100vw - 24px))`,
                                     ...containerStyle
                                 }}
-                                className="min-w-[280px] rounded-[28px] border backdrop-blur-xl transition-transform duration-300 ease-out"
+                                className="relative min-w-[280px] overflow-hidden rounded-[22px] border transition-transform duration-300 ease-out"
                             >
-                                <div style={accentStyle} className="absolute inset-x-6 top-0 h-px"></div>
-                                <div className="flex items-center gap-3 px-4 py-3">
-                                    <div style={avatarFrameStyle} className="h-11 w-11 shrink-0 overflow-hidden rounded-full border self-start">
+                                <div style={accentRailStyle} className="absolute inset-y-0 left-0 w-[5px]"></div>
+                                <div
+                                    style={{ backgroundColor: accentSoftColor }}
+                                    className="absolute -right-10 -top-14 h-32 w-32 rounded-full"
+                                ></div>
+                                <div className="relative flex items-start gap-3.5 py-3.5 pl-[18px] pr-4">
+                                    <div className="relative h-12 w-12 shrink-0 self-start">
+                                        <div style={avatarFrameStyle} className="h-12 w-12 overflow-hidden rounded-[15px] border-2">
                                         {notice.user.avatar ? (
                                             <img
                                                 src={notice.user.avatar}
@@ -419,13 +439,35 @@ const SuccessBannerOverlay: React.FC = () => {
                                                 {userName.slice(0, 1).toUpperCase()}
                                             </div>
                                         )}
+                                        </div>
+                                        <div
+                                            style={{ backgroundColor: accentColor, borderColor: isLightTheme ? '#ffffff' : '#0f172a' }}
+                                            className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full border-2 text-white"
+                                        >
+                                            {isSuccess ? (
+                                                <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" aria-hidden="true">
+                                                    <path d="m3.5 8.3 2.7 2.6 6.2-6.1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                                                </svg>
+                                            ) : (
+                                                <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" aria-hidden="true">
+                                                    <path d="m4.5 4.5 7 7m0-7-7 7" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" />
+                                                </svg>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                        <div className={`mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.32em] ${metaTextClass}`}>
-                                            <span>{tagText}</span>
-                                            <span style={lineStyle} className="h-px flex-1"></span>
+                                        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                                            <span style={statusBadgeStyle} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold leading-none">
+                                                <span style={{ backgroundColor: accentColor }} className="h-1.5 w-1.5 rounded-full"></span>
+                                                {statusTitle}
+                                            </span>
+                                            {isSuccess && (
+                                                <span style={queueBadgeStyle} className="rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none">
+                                                    {queueLabel}
+                                                </span>
+                                            )}
                                         </div>
-                                        <div className={`text-[15px] font-semibold leading-6 break-words whitespace-normal ${bodyTextClass}`}>
+                                        <div className={`text-[15px] font-semibold leading-[1.6] break-words whitespace-normal ${bodyTextClass}`}>
                                             {bannerText}
                                         </div>
                                     </div>
@@ -446,6 +488,9 @@ const hexToRgba = (hex: string, alpha: number): string => {
     const b = parseInt(hex.slice(5, 7), 16) || 30;
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
+
+const clampNumber = (value: number, minimum: number, maximum: number): number =>
+    Math.min(maximum, Math.max(minimum, value));
 
 const mapConsoleColor = (color: string): string => {
     const map: Record<string, string> = {
@@ -1573,6 +1618,7 @@ const AdminWidget: React.FC = () => {
 
     const isInitialConfigLoad = useRef(true);
     const lastConfigString = useRef('');
+    const [noticeFieldDrafts, setNoticeFieldDrafts] = useState<Record<string, string | undefined>>({});
 
     const persistSysConfigNow = useCallback((nextSysConfig: any) => {
         lastConfigString.current = JSON.stringify(nextSysConfig);
@@ -1601,6 +1647,94 @@ const AdminWidget: React.FC = () => {
             showAdminToast("❌ 基础设置保存失败，请检查后端是否运行。");
         });
     }, [showAdminToast]);
+
+    const handleConfigNumberWheel = useCallback((
+        event: React.WheelEvent<HTMLInputElement>,
+        options: {
+            key: string;
+            minimum: number;
+            maximum: number;
+            step: number;
+            precision?: number;
+            fallback: number;
+        }
+    ) => {
+        if (!config?.config) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const direction = event.deltaY < 0 ? 1 : -1;
+        const draftValue = noticeFieldDrafts[options.key];
+        const currentValue = draftValue !== undefined && draftValue.trim() !== ''
+            ? Number(draftValue)
+            : Number(config.config[options.key]);
+        const baseValue = Number.isFinite(currentValue) ? currentValue : options.fallback;
+        const rawValue = baseValue + (direction * options.step);
+        const clampedValue = clampNumber(rawValue, options.minimum, options.maximum);
+        const nextValue = typeof options.precision === 'number'
+            ? Number(clampedValue.toFixed(options.precision))
+            : Math.round(clampedValue);
+
+        setConfig({
+            ...config,
+            config: {
+                ...config.config,
+                [options.key]: nextValue
+            }
+        });
+        setNoticeFieldDrafts(prev => ({
+            ...prev,
+            [options.key]: String(nextValue)
+        }));
+    }, [config, noticeFieldDrafts]);
+
+    const beginNoticeFieldEdit = useCallback((key: string, value: unknown) => {
+        setNoticeFieldDrafts(prev => ({
+            ...prev,
+            [key]: String(value ?? '')
+        }));
+    }, []);
+
+    const changeNoticeFieldDraft = useCallback((key: string, value: string) => {
+        setNoticeFieldDrafts(prev => ({
+            ...prev,
+            [key]: value
+        }));
+    }, []);
+
+    const commitNoticeFieldDraft = useCallback((
+        key: string,
+        options: {
+            minimum: number;
+            maximum: number;
+            precision?: number;
+            fallback: number;
+        }
+    ) => {
+        if (!config?.config) return;
+        const draft = noticeFieldDrafts[key];
+        const parsedValue = draft !== undefined && draft.trim() !== ''
+            ? Number(draft)
+            : Number.NaN;
+        const normalizedValue = Number.isFinite(parsedValue)
+            ? clampNumber(parsedValue, options.minimum, options.maximum)
+            : options.fallback;
+        const nextValue = typeof options.precision === 'number'
+            ? Number(normalizedValue.toFixed(options.precision))
+            : Math.round(normalizedValue);
+
+        setConfig({
+            ...config,
+            config: {
+                ...config.config,
+                [key]: nextValue
+            }
+        });
+        setNoticeFieldDrafts(prev => ({
+            ...prev,
+            [key]: undefined
+        }));
+    }, [config, noticeFieldDrafts]);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -3111,12 +3245,23 @@ const AdminWidget: React.FC = () => {
                                             <div>
                                                 <label className="block text-xs text-gray-400 mb-2">顶部通知停留时长</label>
                                                 <input
-                                                    type="number"
-                                                    min="1000"
-                                                    max="15000"
-                                                    step="100"
-                                                    value={config.config.OverlayNoticeDurationMs ?? 5000}
-                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeDurationMs: parseInt(e.target.value, 10) || 5000}})}
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={noticeFieldDrafts['OverlayNoticeDurationMs'] ?? String(config.config.OverlayNoticeDurationMs ?? 5000)}
+                                                    onFocus={e => beginNoticeFieldEdit('OverlayNoticeDurationMs', e.currentTarget.value)}
+                                                    onChange={e => changeNoticeFieldDraft('OverlayNoticeDurationMs', e.target.value)}
+                                                    onBlur={() => commitNoticeFieldDraft('OverlayNoticeDurationMs', {
+                                                        minimum: 1000,
+                                                        maximum: 15000,
+                                                        fallback: 5000
+                                                    })}
+                                                    onWheel={e => handleConfigNumberWheel(e, {
+                                                        key: 'OverlayNoticeDurationMs',
+                                                        minimum: 1000,
+                                                        maximum: 15000,
+                                                        step: 100,
+                                                        fallback: 5000
+                                                    })}
                                                     className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
                                                 />
                                                 <span className="text-xs text-gray-500 block mt-1.5">单位毫秒，应用于顶部成功/失败通知条；建议 3000 到 7000。</span>
@@ -3125,12 +3270,23 @@ const AdminWidget: React.FC = () => {
                                             <div>
                                                 <label className="block text-xs text-gray-400 mb-2">顶部通知条宽度</label>
                                                 <input
-                                                    type="number"
-                                                    min="280"
-                                                    max="1200"
-                                                    step="10"
-                                                    value={config.config.OverlayNoticeWidthPx ?? 720}
-                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeWidthPx: parseInt(e.target.value, 10) || 720}})}
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={noticeFieldDrafts['OverlayNoticeWidthPx'] ?? String(config.config.OverlayNoticeWidthPx ?? 720)}
+                                                    onFocus={e => beginNoticeFieldEdit('OverlayNoticeWidthPx', e.currentTarget.value)}
+                                                    onChange={e => changeNoticeFieldDraft('OverlayNoticeWidthPx', e.target.value)}
+                                                    onBlur={() => commitNoticeFieldDraft('OverlayNoticeWidthPx', {
+                                                        minimum: 280,
+                                                        maximum: 1200,
+                                                        fallback: 720
+                                                    })}
+                                                    onWheel={e => handleConfigNumberWheel(e, {
+                                                        key: 'OverlayNoticeWidthPx',
+                                                        minimum: 280,
+                                                        maximum: 1200,
+                                                        step: 10,
+                                                        fallback: 720
+                                                    })}
                                                     className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
                                                 />
                                                 <span className="text-xs text-gray-500 block mt-1.5">单位像素，控制顶部通知条的最大宽度；建议 360 到 760。</span>
@@ -3152,15 +3308,32 @@ const AdminWidget: React.FC = () => {
                                             <div>
                                                 <label className="block text-xs text-gray-400 mb-2">顶部通知条透明度</label>
                                                 <input
-                                                    type="number"
-                                                    min="0.35"
-                                                    max="1"
-                                                    step="0.05"
-                                                    value={config.config.OverlayNoticeOpacity ?? 0.94}
-                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeOpacity: parseFloat(e.target.value) || 0.94}})}
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    value={noticeFieldDrafts['OverlayNoticeOpacity'] ?? String(config.config.OverlayNoticeOpacity ?? 0.94)}
+                                                    onFocus={e => beginNoticeFieldEdit('OverlayNoticeOpacity', e.currentTarget.value)}
+                                                    onChange={e => changeNoticeFieldDraft('OverlayNoticeOpacity', e.target.value)}
+                                                    onBlur={() => commitNoticeFieldDraft('OverlayNoticeOpacity', {
+                                                        minimum: 0,
+                                                        maximum: 1,
+                                                        precision: 2,
+                                                        fallback: 0.94
+                                                    })}
+                                                    onWheel={e => handleConfigNumberWheel(e, {
+                                                        key: 'OverlayNoticeOpacity',
+                                                        minimum: 0,
+                                                        maximum: 1,
+                                                        step: 0.05,
+                                                        precision: 2,
+                                                        fallback: 0.94
+                                                    })}
                                                     className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
                                                 />
-                                                <span className="text-xs text-gray-500 block mt-1.5">范围 0.35 到 1。数值越小越通透，越大越接近不透明。</span>
+                                                <span className="text-xs text-gray-500 block mt-1.5">范围 0 到 1。只控制通知卡片主体透明度，文字、头像和红绿状态标记始终保持清晰。</span>
+                                                <div className="mt-2.5 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs leading-relaxed text-amber-200">
+                                                    <span className="font-bold text-amber-300">OBS 浅色半透明提示：</span>
+                                                    若降低透明度后卡片发灰，请在 OBS 中右键该浏览器源，将“混合方式”设为“SRGB Off”；“混合模式”保持“普通”。
+                                                </div>
                                             </div>
 
                                             <div className="flex flex-col justify-center pt-3">

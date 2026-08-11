@@ -336,7 +336,7 @@ function loadConfig() {
       const overlayNoticeOpacity = Number(appConfig.sysConfig.OverlayNoticeOpacity);
       appConfig.sysConfig.OverlayNoticeOpacity = (
         Number.isFinite(overlayNoticeOpacity)
-        && overlayNoticeOpacity >= 0.35
+        && overlayNoticeOpacity >= 0
         && overlayNoticeOpacity <= 1
       ) ? Math.round(overlayNoticeOpacity * 100) / 100 : 0.94;
       if (appConfig.sysConfig.ExternalHttpEnabled === undefined) appConfig.sysConfig.ExternalHttpEnabled = false;
@@ -2833,8 +2833,12 @@ function startBackendServer() {
       const showPlayerCurrentTrack = appConfig.sysConfig?.ShowPlayerCurrentTrack !== false;
       const displayCurrent = currentPlayingSong || (showPlayerCurrentTrack ? playerCurrentTrack : null);
       const requestedSongArtwork = appConfig.sysConfig?.RequestedSongArtwork === 'song_cover' ? 'song_cover' : 'bili_avatar';
+      const configuredNoticeOpacity = Number(appConfig.sysConfig?.OverlayNoticeOpacity);
+      const overlayNoticeOpacity = Number.isFinite(configuredNoticeOpacity)
+        ? Math.min(1, Math.max(0, configuredNoticeOpacity))
+        : 0.94;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity: Number(appConfig.sysConfig?.OverlayNoticeOpacity) || 0.94, rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
+      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity, rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
       return;
     }
 
@@ -3025,7 +3029,7 @@ function startBackendServer() {
         const overlayNoticeOpacity = Number(appConfig.sysConfig.OverlayNoticeOpacity);
         appConfig.sysConfig.OverlayNoticeOpacity = (
           Number.isFinite(overlayNoticeOpacity)
-          && overlayNoticeOpacity >= 0.35
+          && overlayNoticeOpacity >= 0
           && overlayNoticeOpacity <= 1
         ) ? Math.round(overlayNoticeOpacity * 100) / 100 : 0.94;
         appConfig.sysConfig.ExternalApiPort = getExternalApiPort();
@@ -3455,7 +3459,14 @@ function startBackendServer() {
         if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
           const ext = path.extname(filePath);
           const mimeTypes: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.json': 'application/json', '.woff': 'font/woff', '.woff2': 'font/woff2' };
-          res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream'); res.writeHead(200); res.end(fs.readFileSync(filePath)); return;
+          res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+          if (ext === '.html' || ext === '.js' || ext === '.css') {
+            // OBS browser sources can retain the old renderer across reinstalls.
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+          }
+          res.writeHead(200); res.end(fs.readFileSync(filePath)); return;
         }
       } catch {}
     }
