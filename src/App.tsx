@@ -142,11 +142,6 @@ interface SysLog {
     Message: string;
 }
 
-interface UpdateInfo {
-    checking: boolean;
-    info: any;
-}
-
 interface QrState {
     loading: boolean;
     base64: string;
@@ -242,6 +237,245 @@ const GlobalStyles: React.FC = () => (
     input[type="color"]::-webkit-color-swatch { border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; }
     
     .no-drag { -webkit-app-region: no-drag; }
+
+    .admin-widget-root {
+        --admin-accent: #7c6cf2;
+        --admin-accent-soft: rgba(124, 108, 242, 0.14);
+        --admin-border: rgba(255, 255, 255, 0.075);
+        --admin-surface: rgba(18, 22, 32, 0.86);
+        color: #e8eaf2;
+        background:
+            radial-gradient(circle at 78% -12%, rgba(124, 108, 242, 0.17), transparent 36%),
+            radial-gradient(circle at 18% 110%, rgba(38, 191, 165, 0.09), transparent 30%),
+            #0b0d13;
+    }
+    .admin-titlebar {
+        min-height: 52px;
+        background: rgba(11, 13, 19, 0.78);
+        border-bottom: 1px solid var(--admin-border);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+    }
+    .admin-brand-mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 9px;
+        color: white;
+        font-size: 15px;
+        font-weight: 800;
+        background: linear-gradient(145deg, #8b7cf6, #6253dd);
+        box-shadow: 0 8px 24px rgba(98, 83, 221, 0.28), inset 0 1px rgba(255, 255, 255, 0.24);
+    }
+    .admin-sidebar {
+        width: 190px;
+        padding: 18px 12px 14px;
+        border-right: 1px solid var(--admin-border);
+        background: rgba(11, 13, 19, 0.54);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+    }
+    .admin-nav-label {
+        padding: 0 10px;
+        margin: 6px 0 7px;
+        color: #666c7d;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .14em;
+    }
+    .admin-nav-item {
+        position: relative;
+        display: flex;
+        width: 100%;
+        align-items: center;
+        gap: 11px;
+        padding: 10px 11px;
+        border: 1px solid transparent;
+        border-radius: 11px;
+        color: #9298a9;
+        font-size: 13px;
+        text-align: left;
+        transition: color 160ms ease, background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+    .admin-nav-item:hover {
+        color: #e8eaf2;
+        background: rgba(255, 255, 255, 0.045);
+    }
+    .admin-nav-item:active { transform: scale(.985); }
+    .admin-nav-item.active {
+        color: white;
+        background: linear-gradient(115deg, rgba(124, 108, 242, 0.2), rgba(124, 108, 242, 0.08));
+        border-color: rgba(139, 124, 246, 0.2);
+        box-shadow: inset 0 1px rgba(255,255,255,.035);
+    }
+    .admin-nav-item.active::before {
+        content: '';
+        position: absolute;
+        left: -13px;
+        width: 3px;
+        height: 20px;
+        border-radius: 0 4px 4px 0;
+        background: #8b7cf6;
+        box-shadow: 0 0 14px rgba(139, 124, 246, .72);
+    }
+    .admin-nav-icon {
+        display: grid;
+        width: 25px;
+        height: 25px;
+        flex: 0 0 25px;
+        place-items: center;
+        border-radius: 8px;
+        color: #858b9d;
+        font-size: 14px;
+        font-weight: 700;
+        background: rgba(255, 255, 255, 0.045);
+        transition: inherit;
+    }
+    .admin-nav-item.active .admin-nav-icon {
+        color: #dcd8ff;
+        background: rgba(139, 124, 246, .18);
+    }
+    .admin-content-shell { padding: 30px clamp(24px, 4vw, 52px) 44px; }
+    .admin-page { width: 100%; max-width: 1040px; margin: 0 auto; }
+    .admin-page-heading {
+        margin: 0;
+        color: #f7f7fb;
+        font-size: 26px;
+        font-weight: 750;
+        letter-spacing: -.025em;
+    }
+    .admin-settings-hero {
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 20px;
+        padding: 24px;
+        border: 1px solid rgba(139, 124, 246, .2);
+        border-radius: 18px;
+        background: linear-gradient(125deg, rgba(124, 108, 242, .14), rgba(20, 24, 35, .74) 52%, rgba(38, 191, 165, .055));
+        box-shadow: 0 18px 48px rgba(0, 0, 0, .18), inset 0 1px rgba(255, 255, 255, .04);
+    }
+    .admin-settings-hero::after {
+        content: '';
+        position: absolute;
+        top: -70px;
+        right: -60px;
+        width: 190px;
+        height: 190px;
+        border-radius: 50%;
+        background: rgba(139, 124, 246, .12);
+        filter: blur(6px);
+        pointer-events: none;
+    }
+    .admin-quick-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 20px;
+    }
+    .admin-quick-nav button {
+        padding: 7px 11px;
+        border: 1px solid rgba(255, 255, 255, .08);
+        border-radius: 9px;
+        color: #aeb3c2;
+        font-size: 11px;
+        font-weight: 650;
+        background: rgba(5, 7, 11, .26);
+        transition: all 150ms ease;
+    }
+    .admin-quick-nav button:hover {
+        color: white;
+        border-color: rgba(139, 124, 246, .35);
+        background: rgba(139, 124, 246, .12);
+    }
+    .admin-settings-page > .settings-card {
+        scroll-margin-top: 22px;
+        background: linear-gradient(145deg, rgba(21, 25, 36, .92), rgba(15, 18, 27, .9));
+        border-color: rgba(255, 255, 255, .075);
+        border-radius: 16px;
+        box-shadow: 0 14px 38px rgba(0, 0, 0, .16), inset 0 1px rgba(255, 255, 255, .025);
+    }
+    .admin-settings-page input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+    .admin-settings-page select,
+    .admin-settings-page textarea {
+        border-color: rgba(255, 255, 255, .09);
+        background: rgba(4, 6, 10, .36);
+        transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+    .admin-settings-page input:not([type="checkbox"]):not([type="range"]):not([type="color"]):focus,
+    .admin-settings-page select:focus,
+    .admin-settings-page textarea:focus {
+        border-color: rgba(139, 124, 246, .58) !important;
+        background: rgba(8, 10, 16, .64);
+        box-shadow: 0 0 0 3px rgba(124, 108, 242, .1);
+    }
+    .admin-range-field {
+        padding: 13px 14px 11px;
+        border: 1px solid rgba(255, 255, 255, .075);
+        border-radius: 12px;
+        background: rgba(4, 6, 10, .25);
+    }
+    .admin-range-value {
+        min-width: 58px;
+        padding: 4px 8px;
+        border: 1px solid rgba(139, 124, 246, .18);
+        border-radius: 7px;
+        color: #dcd8ff;
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+        background: rgba(124, 108, 242, .09);
+    }
+    .admin-range-input {
+        width: 100%;
+        height: 4px;
+        margin: 13px 0 9px;
+        border-radius: 999px;
+        appearance: none;
+        -webkit-appearance: none;
+        cursor: pointer;
+    }
+    .admin-range-input::-webkit-slider-thumb {
+        width: 15px;
+        height: 15px;
+        border: 3px solid #8b7cf6;
+        border-radius: 50%;
+        appearance: none;
+        -webkit-appearance: none;
+        background: #f7f7fb;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, .35), 0 0 0 3px rgba(139, 124, 246, .12);
+        transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+    .admin-range-input:hover::-webkit-slider-thumb,
+    .admin-range-input:focus-visible::-webkit-slider-thumb {
+        transform: scale(1.08);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, .4), 0 0 0 5px rgba(139, 124, 246, .15);
+    }
+    .admin-range-input:disabled { cursor: not-allowed; opacity: .42; }
+    .admin-range-bounds {
+        display: flex;
+        justify-content: space-between;
+        color: #5f6575;
+        font-size: 9px;
+        font-variant-numeric: tabular-nums;
+    }
+    .admin-widget-root button:focus-visible,
+    .admin-widget-root a:focus-visible,
+    .admin-widget-root input:focus-visible,
+    .admin-widget-root select:focus-visible,
+    .admin-widget-root textarea:focus-visible {
+        outline: 2px solid rgba(167, 155, 255, .9);
+        outline-offset: 2px;
+    }
+    @media (max-width: 720px) {
+        .admin-sidebar { width: 76px; padding-inline: 9px; }
+        .admin-sidebar .admin-nav-label,
+        .admin-sidebar .admin-nav-text,
+        .admin-sidebar .admin-sidebar-meta { display: none; }
+        .admin-nav-item { justify-content: center; padding-inline: 8px; }
+        .admin-nav-item.active::before { left: -10px; }
+        .admin-content-shell { padding: 22px 16px 36px; }
+    }
   `}</style>
 );
 
@@ -489,8 +723,90 @@ const hexToRgba = (hex: string, alpha: number): string => {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-const clampNumber = (value: number, minimum: number, maximum: number): number =>
-    Math.min(maximum, Math.max(minimum, value));
+interface BoundedRangeProps {
+    label: string;
+    value: number;
+    minimum: number;
+    maximum: number;
+    step: number;
+    minimumLabel: string;
+    maximumLabel: string;
+    formatValue: (value: number) => string;
+    onChange: (value: number) => void;
+    onCommit: (value: number) => void;
+    onEditingChange: (editing: boolean) => void;
+    disabled?: boolean;
+}
+
+const BoundedRange: React.FC<BoundedRangeProps> = ({
+    label,
+    value,
+    minimum,
+    maximum,
+    step,
+    minimumLabel,
+    maximumLabel,
+    formatValue,
+    onChange,
+    onCommit,
+    onEditingChange,
+    disabled = false
+}) => {
+    const editingRef = useRef(false);
+    const normalizedValue = Number.isFinite(value)
+        ? Math.min(maximum, Math.max(minimum, value))
+        : minimum;
+    const progress = ((normalizedValue - minimum) / (maximum - minimum)) * 100;
+
+    const beginEditing = () => {
+        if (editingRef.current) return;
+        editingRef.current = true;
+        onEditingChange(true);
+    };
+    const commit = (nextValue: number) => {
+        if (!editingRef.current) return;
+        editingRef.current = false;
+        onEditingChange(false);
+        onCommit(nextValue);
+    };
+
+    return (
+        <div className="admin-range-field">
+            <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-medium text-gray-300">{label}</label>
+                <output className="admin-range-value">{formatValue(normalizedValue)}</output>
+            </div>
+            <input
+                type="range"
+                aria-label={label}
+                aria-valuetext={formatValue(normalizedValue)}
+                disabled={disabled}
+                min={minimum}
+                max={maximum}
+                step={step}
+                value={normalizedValue}
+                onPointerDown={beginEditing}
+                onKeyDown={beginEditing}
+                onChange={event => {
+                    beginEditing();
+                    onChange(Number(event.currentTarget.value));
+                }}
+                onPointerUp={event => commit(Number(event.currentTarget.value))}
+                onPointerCancel={event => commit(Number(event.currentTarget.value))}
+                onKeyUp={event => commit(Number(event.currentTarget.value))}
+                onBlur={event => commit(Number(event.currentTarget.value))}
+                className="admin-range-input"
+                style={{
+                    background: `linear-gradient(90deg, #8b7cf6 0%, #8b7cf6 ${progress}%, rgba(255,255,255,.09) ${progress}%, rgba(255,255,255,.09) 100%)`
+                }}
+            />
+            <div className="admin-range-bounds" aria-hidden="true">
+                <span>{minimumLabel}</span>
+                <span>{maximumLabel}</span>
+            </div>
+        </div>
+    );
+};
 
 const mapConsoleColor = (color: string): string => {
     const map: Record<string, string> = {
@@ -1324,9 +1640,6 @@ const AdminWidget: React.FC = () => {
     const [config, setConfig] = useState<any>(null);
     const [activeTab, setActiveTab] = useState<string>('settings');
 
-    const [updateInfo, setUpdateInfo] = useState<UpdateInfo>({ checking: false, info: null });
-    const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
-
     const [qrState, setQrState] = useState<QrState>({ loading: false, base64: '', message: '' });
     const [roomIdInput, setRoomIdInput] = useState<string>('');
     const [sysLogs, setSysLogs] = useState<SysLog[]>([]);
@@ -1351,19 +1664,6 @@ const AdminWidget: React.FC = () => {
         NativeConnectorId | null
     >(null);
     const [connectorStatusError, setConnectorStatusError] = useState('');
-    const [feedbackForm, setFeedbackForm] = useState({
-        category: 'bug',
-        priority: 'normal',
-        title: '',
-        description: '',
-        contact: ''
-    });
-    const [feedbackDiagnostics, setFeedbackDiagnostics] = useState<any>(null);
-    const [feedbackIncludeDiagnostics, setFeedbackIncludeDiagnostics] = useState(true);
-    const [feedbackIncludeLogs, setFeedbackIncludeLogs] = useState(false);
-    const [feedbackLoading, setFeedbackLoading] = useState(false);
-    const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
-    const [feedbackResult, setFeedbackResult] = useState<any>(null);
     const [overlayMods, setOverlayMods] = useState<OverlayModState | null>(null);
     const [overlayUrl, setOverlayUrl] = useState(
         'https://github.com/Enkianssus/HaruMusicBot-Overlay-Default'
@@ -1618,7 +1918,7 @@ const AdminWidget: React.FC = () => {
 
     const isInitialConfigLoad = useRef(true);
     const lastConfigString = useRef('');
-    const [noticeFieldDrafts, setNoticeFieldDrafts] = useState<Record<string, string | undefined>>({});
+    const rangeControlEditingRef = useRef(false);
 
     const persistSysConfigNow = useCallback((nextSysConfig: any) => {
         lastConfigString.current = JSON.stringify(nextSysConfig);
@@ -1648,93 +1948,27 @@ const AdminWidget: React.FC = () => {
         });
     }, [showAdminToast]);
 
-    const handleConfigNumberWheel = useCallback((
-        event: React.WheelEvent<HTMLInputElement>,
-        options: {
-            key: string;
-            minimum: number;
-            maximum: number;
-            step: number;
-            precision?: number;
-            fallback: number;
-        }
-    ) => {
-        if (!config?.config) return;
-        event.preventDefault();
-        event.stopPropagation();
-
-        const direction = event.deltaY < 0 ? 1 : -1;
-        const draftValue = noticeFieldDrafts[options.key];
-        const currentValue = draftValue !== undefined && draftValue.trim() !== ''
-            ? Number(draftValue)
-            : Number(config.config[options.key]);
-        const baseValue = Number.isFinite(currentValue) ? currentValue : options.fallback;
-        const rawValue = baseValue + (direction * options.step);
-        const clampedValue = clampNumber(rawValue, options.minimum, options.maximum);
-        const nextValue = typeof options.precision === 'number'
-            ? Number(clampedValue.toFixed(options.precision))
-            : Math.round(clampedValue);
-
-        setConfig({
-            ...config,
-            config: {
-                ...config.config,
-                [options.key]: nextValue
-            }
-        });
-        setNoticeFieldDrafts(prev => ({
-            ...prev,
-            [options.key]: String(nextValue)
-        }));
-    }, [config, noticeFieldDrafts]);
-
-    const beginNoticeFieldEdit = useCallback((key: string, value: unknown) => {
-        setNoticeFieldDrafts(prev => ({
-            ...prev,
-            [key]: String(value ?? '')
-        }));
+    const handleRangeEditingChange = useCallback((editing: boolean) => {
+        rangeControlEditingRef.current = editing;
     }, []);
 
-    const changeNoticeFieldDraft = useCallback((key: string, value: string) => {
-        setNoticeFieldDrafts(prev => ({
-            ...prev,
+    const updateBoundedConfigValue = useCallback((key: string, value: number) => {
+        setConfig((previous: any) => previous ? ({
+            ...previous,
+            config: {
+                ...previous.config,
+                [key]: value
+            }
+        }) : previous);
+    }, []);
+
+    const commitBoundedConfigValue = useCallback((key: string, value: number) => {
+        if (!config?.config) return;
+        persistSysConfigNow({
+            ...config.config,
             [key]: value
-        }));
-    }, []);
-
-    const commitNoticeFieldDraft = useCallback((
-        key: string,
-        options: {
-            minimum: number;
-            maximum: number;
-            precision?: number;
-            fallback: number;
-        }
-    ) => {
-        if (!config?.config) return;
-        const draft = noticeFieldDrafts[key];
-        const parsedValue = draft !== undefined && draft.trim() !== ''
-            ? Number(draft)
-            : Number.NaN;
-        const normalizedValue = Number.isFinite(parsedValue)
-            ? clampNumber(parsedValue, options.minimum, options.maximum)
-            : options.fallback;
-        const nextValue = typeof options.precision === 'number'
-            ? Number(normalizedValue.toFixed(options.precision))
-            : Math.round(normalizedValue);
-
-        setConfig({
-            ...config,
-            config: {
-                ...config.config,
-                [key]: nextValue
-            }
         });
-        setNoticeFieldDrafts(prev => ({
-            ...prev,
-            [key]: undefined
-        }));
-    }, [config, noticeFieldDrafts]);
+    }, [config, persistSysConfigNow]);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -1764,6 +1998,7 @@ const AdminWidget: React.FC = () => {
 
     useEffect(() => {
         if (!config || !config.config) return;
+        if (rangeControlEditingRef.current) return;
 
         const currentStr = JSON.stringify(config.config);
 
@@ -2104,131 +2339,9 @@ const AdminWidget: React.FC = () => {
         }
     };
 
-    const handleUpdateCheck = async () => {
-        setUpdateInfo({ checking: true, info: null });
-        try {
-            const res = await fetch('http://localhost:5555/api/update/check');
-            const json = await res.json();
-            setUpdateInfo({ checking: false, info: json });
-
-            if (!json.hasUpdate && !json.error) {
-                showAdminToast("✅ 当前已经是最新版本，无需更新！");
-            } else if (json.error) {
-                showAdminToast(`❌ 检查失败: ${json.error}`);
-            }
-        } catch {
-            setUpdateInfo({ checking: false, info: { error: '检查失败，请重试' } });
-            showAdminToast("❌ 网络请求失败，请检查网络！");
-        }
-    };
-
-    const handleApplyUpdate = async () => {
-        if(!confirm("确定要开始更新吗？程序将会自动下载并重启。")) return;
-        setDownloadProgress(0);
-
-        try {
-            await fetch('http://localhost:5555/api/update/apply', { method: 'POST' });
-            showAdminToast("正在后台下载更新，请稍候，程序将自动重启...");
-
-            // 模拟进度条，真实后台正在走 Updater 更新流
-            const timer = setInterval(() => {
-                setDownloadProgress(prev => {
-                    if (prev === null) {
-                        clearInterval(timer);
-                        return null;
-                    }
-                    const next = prev + (Math.random() * 8 + 2);
-                    return next > 95 ? 95 : next; // 卡在 95% 直到后端完成并自动重启
-                });
-            }, 1000);
-        } catch {
-            setDownloadProgress(null);
-            showAdminToast("❌ 更新请求失败，请检查网络连接");
-        }
-    };
-
     const startQrLogin = async () => {
         setQrState(prev => ({ ...prev, loading: true, base64: '' }));
         await fetch('http://localhost:5555/api/bili/qrstart', { method: 'POST' });
-    };
-
-    const loadFeedbackDiagnostics = useCallback(async (includeLogs = false) => {
-        setFeedbackLoading(true);
-        try {
-            const response = await fetch(
-                'http://localhost:5555/api/feedback/diagnostics'
-                + (includeLogs ? '?logs=1' : '')
-            );
-            const result = await response.json();
-            if (!response.ok || !result.success) {
-                throw new Error(result.message || '诊断信息读取失败');
-            }
-            setFeedbackDiagnostics(result);
-        } catch (error: unknown) {
-            const message = error instanceof Error
-                ? error.message
-                : '诊断信息读取失败';
-            showAdminToast(`❌ ${message}`);
-        } finally {
-            setFeedbackLoading(false);
-        }
-    }, [showAdminToast]);
-
-    useEffect(() => {
-        if (activeTab !== 'feedback') return;
-        void loadFeedbackDiagnostics(feedbackIncludeLogs);
-    }, [
-        activeTab,
-        feedbackIncludeLogs,
-        loadFeedbackDiagnostics
-    ]);
-
-    const handleFeedbackSubmit = async () => {
-        if (feedbackSubmitting) return;
-        if (feedbackForm.title.trim().length < 4) {
-            showAdminToast('❌ 反馈标题至少需要 4 个字符');
-            return;
-        }
-        if (feedbackForm.description.trim().length < 10) {
-            showAdminToast('❌ 请至少用 10 个字符描述问题');
-            return;
-        }
-
-        setFeedbackSubmitting(true);
-        setFeedbackResult(null);
-        try {
-            const response = await fetch(
-                'http://localhost:5555/api/feedback/submit',
-                {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        ...feedbackForm,
-                        includeDiagnostics: feedbackIncludeDiagnostics,
-                        includeLogs:
-                            feedbackIncludeDiagnostics && feedbackIncludeLogs
-                    })
-                }
-            );
-            const result = await response.json();
-            if (!response.ok || !result.success) {
-                throw new Error(result.message || '提交失败');
-            }
-            setFeedbackResult(result);
-            setFeedbackForm(previous => ({
-                ...previous,
-                title: '',
-                description: ''
-            }));
-            showAdminToast(`✅ 已提交反馈 ${result.id}`);
-        } catch (error: unknown) {
-            const message = error instanceof Error
-                ? error.message
-                : '提交失败';
-            showAdminToast(`❌ ${message}`);
-        } finally {
-            setFeedbackSubmitting(false);
-        }
     };
 
     const logoutBili = async () => {
@@ -2431,9 +2544,32 @@ const AdminWidget: React.FC = () => {
     );
     const modObsUrl = `http://127.0.0.1:${externalApiPort}/overlay/`;
     const currentStatusSong = config?.current as SongInfo | null | undefined;
+    const primaryTabs = [
+        { id: 'status', icon: '⌂', label: '运行状态' },
+        { id: 'settings', icon: '⚙', label: '基础设置' },
+        { id: 'login', icon: '◎', label: '账号授权' }
+    ];
+    const supportTabs = [
+        { id: 'logs', icon: '≡', label: '运行日志' },
+        { id: 'faq', icon: '?', label: '常见问题' },
+        { id: 'debug', icon: '⌘', label: '调试工具' }
+    ];
+    const renderAdminTabs = (tabs: typeof primaryTabs) => tabs.map(tab => (
+        <button
+            key={tab.id}
+            type="button"
+            title={tab.label}
+            aria-current={activeTab === tab.id ? 'page' : undefined}
+            onClick={() => setActiveTab(tab.id)}
+            className={`admin-nav-item ${activeTab === tab.id ? 'active' : ''}`}
+        >
+            <span className="admin-nav-icon" aria-hidden="true">{tab.icon}</span>
+            <span className="admin-nav-text truncate font-medium">{tab.label}</span>
+        </button>
+    ));
 
     return (
-        <div className="admin-widget-root animate-fade-in text-gray-200 flex flex-col font-sans select-none w-full h-screen overflow-hidden" style={{ backgroundColor: '#0d1117' }}>
+        <div className="admin-widget-root animate-fade-in text-gray-200 flex flex-col font-sans select-none w-full h-screen overflow-hidden">
 
             {adminToast && (
                 <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-[99999] bg-blue-600 text-white px-6 py-3 rounded-full shadow-2xl font-bold animate-slide-in flex items-center gap-2">
@@ -2441,33 +2577,47 @@ const AdminWidget: React.FC = () => {
                 </div>
             )}
 
-            <div className="px-4 py-2 border-b border-white/10 flex justify-between items-center bg-white/5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-                <div className="font-bold text-white text-sm flex items-center gap-2">⚙️ 控制面板</div>
+            <div className="admin-titlebar px-4 flex justify-between items-center" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+                <div className="flex items-center gap-3">
+                    <span className="admin-brand-mark" aria-hidden="true">♪</span>
+                    <div className="leading-tight">
+                        <div className="text-[13px] font-bold tracking-wide text-white">易点椿曲</div>
+                        <div className="text-[9px] tracking-[0.18em] text-gray-500">设置中心</div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.75)]" />
+                    本地服务
+                    {config?.version && <span className="ml-1 rounded-md border border-white/[0.07] bg-white/[0.035] px-2 py-1 text-gray-400">v{config.version}</span>}
+                </div>
             </div>
 
             <div className="flex-1 flex overflow-hidden relative">
-                <div className="w-36 border-r border-white/5 bg-white/[0.02] flex flex-col p-2 gap-1 overflow-y-auto custom-scrollbar shrink-0 z-10">
-                    {[
-                        { id: 'status', icon: '🏠', label: '运行状态' },
-                        { id: 'settings', icon: '⚙️', label: '基础设置' },
-                        { id: 'logs', icon: '📝', label: '运行日志' },
-                        { id: 'faq', icon: '❓', label: '常见问题' },
-                        { id: 'feedback', icon: '💬', label: '问题反馈' },
-                        { id: 'login', icon: '📱', label: '扫码登录' },
-                        { id: 'update', icon: '🚀', label: '版本升级' },
-                        { id: 'debug', icon: '🐞', label: '调试测试' }
-                    ].map(t => (
-                        <button key={t.id} onClick={() => setActiveTab(t.id)} className={`flex items-center gap-2.5 p-2.5 rounded-lg text-sm transition-colors text-left ${activeTab === t.id ? 'bg-blue-600 text-white font-bold' : 'hover:bg-white/10 text-gray-400'}`}>
-                            <span>{t.icon}</span> <span className="truncate">{t.label}</span>
-                        </button>
-                    ))}
-                </div>
+                <nav className="admin-sidebar flex flex-col gap-1 overflow-y-auto custom-scrollbar shrink-0 z-10" aria-label="设置中心导航">
+                    <div className="admin-nav-label">主要功能</div>
+                    {renderAdminTabs(primaryTabs)}
+                    <div className="admin-nav-label mt-5">支持与诊断</div>
+                    {renderAdminTabs(supportTabs)}
 
-                <div className="flex-1 p-6 overflow-y-auto custom-scrollbar select-text relative">
+                    <div className="admin-sidebar-meta mt-auto mx-1 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-3">
+                        <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold text-gray-400">
+                            <span className={`h-1.5 w-1.5 rounded-full ${config?.playerConnected ? 'bg-emerald-400' : 'bg-gray-600'}`} />
+                            播放器
+                        </div>
+                        <div className="truncate text-[11px] text-gray-500">
+                            {config?.playerConnected ? '连接正常' : '等待连接'}
+                        </div>
+                    </div>
+                </nav>
+
+                <main className="admin-content-shell flex-1 overflow-y-auto custom-scrollbar select-text relative">
                     {!config ? (
-                        <div className="h-full flex items-center justify-center text-white/50">正在连接后端服务...</div>
+                        <div className="h-full flex flex-col items-center justify-center gap-3 text-white/50">
+                            <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-violet-400" />
+                            <span className="text-xs tracking-wide">正在连接本地服务…</span>
+                        </div>
                     ) : (
-                        <div className="max-w-3xl mx-auto">
+                        <div className="admin-page">
 
                             {/* ⭐ 新增: 全局联动智能异常自诊断提示栏 (在所有Tab的最上方持续警醒显示) */}
                             {hasBiliLoopIssue && (
@@ -2896,12 +3046,35 @@ const AdminWidget: React.FC = () => {
                             )}
 
                             {activeTab === 'settings' && (
-                                <div className="animate-slide-in-right pb-10">
-                                    <h2 className="text-2xl font-bold text-white mb-6">基础设置</h2>
+                                <div className="admin-settings-page animate-slide-in-right pb-10">
+                                    <section className="admin-settings-hero">
+                                        <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
+                                            <div>
+                                                <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em] text-violet-300/80">Preferences</div>
+                                                <h2 className="admin-page-heading">基础设置</h2>
+                                                <p className="mt-2 max-w-xl text-sm leading-relaxed text-gray-400">
+                                                    集中管理播放器连接、点歌规则、展示接口与用户权限。
+                                                </p>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-1.5 text-[10px] font-semibold text-emerald-300">自动保存已开启</span>
+                                                <span className={`rounded-full border px-3 py-1.5 text-[10px] font-semibold ${config.playerConnected ? 'border-violet-400/25 bg-violet-400/10 text-violet-200' : 'border-white/10 bg-white/[0.035] text-gray-400'}`}>
+                                                    {config.playerConnected ? '播放器已连接' : '播放器待连接'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="admin-quick-nav relative z-10" aria-label="设置页快速定位">
+                                            <button type="button" onClick={() => document.getElementById('settings-player')?.scrollIntoView({behavior: 'smooth'})}>播放与连接</button>
+                                            <button type="button" onClick={() => document.getElementById('settings-request-rules')?.scrollIntoView({behavior: 'smooth'})}>点歌规则</button>
+                                            <button type="button" onClick={() => document.getElementById('settings-display')?.scrollIntoView({behavior: 'smooth'})}>展示设置</button>
+                                            <button type="button" onClick={() => document.getElementById('settings-api')?.scrollIntoView({behavior: 'smooth'})}>外部接口</button>
+                                            <button type="button" onClick={() => document.getElementById('settings-permissions')?.scrollIntoView({behavior: 'smooth'})}>用户与权限</button>
+                                        </div>
+                                    </section>
 
                                     {/* 登录账号信息卡 */}
                                     {config.biliLogin && config.currentUser?.uid ? (
-                                        <div className="bg-white/5 p-5 rounded-xl border border-white/10 mb-6 shadow-inner flex items-center gap-5">
+                                        <div className="settings-card bg-white/5 p-5 rounded-xl border border-white/10 mb-6 shadow-inner flex items-center gap-5">
                                             <img
                                                 src={config.currentUser.face ? `${config.currentUser.face}@160w_160h.webp` : `https://api.dicebear.com/7.x/identicon/svg?seed=${config.currentUser.uid}`}
                                                 referrerPolicy="no-referrer"
@@ -2917,23 +3090,23 @@ const AdminWidget: React.FC = () => {
                                                     )}
                                                 </div>
                                                 <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-gray-400">
-                                                    <span>🆔 UID: <span className="text-gray-200 font-mono select-all">{config.currentUser.uid}</span></span>
-                                                    <span>🏠 直播间: {config.currentUser.myRoomId > 0
+                                                    <span>UID <span className="ml-1 text-gray-200 font-mono select-all">{config.currentUser.uid}</span></span>
+                                                    <span>直播间 {config.currentUser.myRoomId > 0
                                                         ? <span className="text-cyan-400 font-mono select-all">{config.currentUser.myRoomId}</span>
                                                         : <span className="text-gray-500">未开通</span>}</span>
-                                                    <span>💖 粉丝: <span className="text-gray-200">{config.currentUser.followerCount ?? 0}</span></span>
+                                                    <span>粉丝 <span className="ml-1 text-gray-200">{config.currentUser.followerCount ?? 0}</span></span>
                                                     {config.currentUser.myRoomId > 0 && (
                                                         <>
-                                                            <span>⛵ 大航海: <span className="text-gray-200">{config.currentUser.guardCount ?? 0}</span></span>
-                                                            <span>🛡️ 粉丝团: <span className="text-gray-200">{config.currentUser.fanClubCount ?? 0}</span></span>
+                                                            <span>大航海 <span className="ml-1 text-gray-200">{config.currentUser.guardCount ?? 0}</span></span>
+                                                            <span>粉丝团 <span className="ml-1 text-gray-200">{config.currentUser.fanClubCount ?? 0}</span></span>
                                                         </>
                                                     )}
                                                 </div>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="bg-cyan-500/10 p-4 rounded-xl border border-cyan-500/20 mb-6 text-sm text-cyan-100 flex items-start gap-3">
-                                            <span>👤</span>
+                                        <div className="settings-card bg-cyan-500/10 p-4 rounded-xl border border-cyan-500/20 mb-6 text-sm text-cyan-100 flex items-start gap-3">
+                                            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cyan-400/10 text-cyan-300">◎</span>
                                             <div>
                                                 <div className="font-bold">游客模式已启用</div>
                                                 <div className="text-xs text-gray-400 mt-1">无需扫码即可连接直播间和使用普通点歌。超级用户白名单与自定义权限控制需登录后才可设置。</div>
@@ -2942,15 +3115,16 @@ const AdminWidget: React.FC = () => {
                                     )}
 
                                     {/* 播放器原生控制区域 */}
-                                    <div className="bg-white/5 p-6 rounded-xl border border-purple-500/40 space-y-5 mb-6 shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden">
-                                        <div className="absolute top-0 right-0 bg-purple-600 text-white text-xs px-3 py-1 rounded-bl-lg font-bold">v1.1 独立连接器</div>
+                                    <div id="settings-player" className="settings-card bg-white/5 p-6 rounded-xl border border-purple-500/40 space-y-5 mb-6 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 rounded-bl-xl border-b border-l border-violet-400/20 bg-violet-400/10 px-3 py-1.5 text-[10px] font-bold text-violet-200">独立连接器</div>
 
                                         <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
-                                            <h3 className="text-sm font-bold text-purple-400 uppercase tracking-widest">
-                                                💻 播放器设置
-                                            </h3>
+                                            <div>
+                                                <h3 className="text-sm font-bold text-violet-300">播放与连接</h3>
+                                                <p className="mt-1 text-[11px] text-gray-500">选择目标播放器，并管理对应的本地连接器。</p>
+                                            </div>
                                             <span className="px-3 py-1.5 bg-green-500/10 text-green-300 text-[11px] rounded-lg font-bold border border-green-500/30">
-                                                {connectorChecking ? '⏳ 正在同步版本' : '♨️ 同播放器版本自动更新'}
+                                                {connectorChecking ? '正在同步版本…' : '兼容补丁自动更新'}
                                             </span>
                                         </div>
 
@@ -2991,7 +3165,7 @@ const AdminWidget: React.FC = () => {
                                                             {selected ? (
                                                                 <div className="space-y-1.5">
                                                                     <span className={`inline-flex text-[10px] px-2.5 py-1 rounded-full font-bold shadow-md ${connecting ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' : connected ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
-                                                                        {connecting ? '⏳ 连接中' : connected ? '✅ 已连接' : '❌ 未连接'}
+                                                                                {connecting ? '连接中' : connected ? '已连接' : '未连接'}
                                                                     </span>
                                                                     <div className="text-[10px] text-gray-400">
                                                                         播放器版本：
@@ -3089,7 +3263,7 @@ const AdminWidget: React.FC = () => {
                                                                     {reinstalling
                                                                         ? '⏳ 更新中'
                                                                         : connectorStatus.manualUpdateAvailable
-                                                                            ? '⚠️ 手动更新'
+                                                                            ? '手动更新'
                                                                             : '⬆️ 立即更新'}
                                                                 </button>
                                                             )}
@@ -3107,7 +3281,7 @@ const AdminWidget: React.FC = () => {
                                                                     ? '⏳ 重新安装中'
                                                                     : automaticallyUpdating
                                                                         ? '⏳ 自动更新中'
-                                                                        : '🛠️ 重新安装'}
+                                                                        : '重新安装'}
                                                             </button>
                                                             <button
                                                                 disabled={
@@ -3119,7 +3293,7 @@ const AdminWidget: React.FC = () => {
                                                                 onClick={handleReconnectPlayer}
                                                                 className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-[11px] rounded-lg font-bold shadow transition-colors border border-purple-400/50 disabled:opacity-30 disabled:cursor-not-allowed"
                                                             >
-                                                                {connecting ? '⏳ 连接中' : '🔄 重新连接'}
+                                                                {connecting ? '连接中' : '重新连接'}
                                                             </button>
                                                         </div>
                                                     </div>
@@ -3154,15 +3328,18 @@ const AdminWidget: React.FC = () => {
                                         )}
 
                                         <div className="text-xs text-gray-500 mt-2 italic flex gap-2 leading-relaxed">
-                                            <span className="shrink-0">💡</span>
+                                            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-white/10 text-[10px] not-italic">i</span>
                                             <span>
                                                 本体会自动补齐缺少的连接器，并每 30 分钟检查新版本。同一播放器兼容分支只提高第三位的补丁会自动更新；第二位提高代表播放器兼容版本变化，只会提示并等待手动确认。跨分支手动更新前会显示目标连接器支持的播放器版本。“重新安装”只用于当前兼容分支的手动修复。
                                             </span>
                                         </div>
                                     </div>
 
-                                    <div className="bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6">
-                                        <h3 className="text-sm font-bold text-blue-400 uppercase tracking-widest border-b border-white/10 pb-3">⏱️ 点歌冷却设置 (秒)</h3>
+                                    <div id="settings-request-rules" className="settings-card bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6">
+                                        <div className="border-b border-white/10 pb-3">
+                                            <h3 className="text-sm font-bold text-violet-200">点歌冷却</h3>
+                                            <p className="mt-1 text-[11px] text-gray-500">分别设置不同身份用户的请求间隔，单位为秒。</p>
+                                        </div>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                             <div>
                                                 <label className="block text-xs text-gray-400 mb-2">普通用户</label>
@@ -3192,8 +3369,11 @@ const AdminWidget: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6">
-                                        <h3 className="text-sm font-bold text-blue-400 uppercase tracking-widest border-b border-white/10 pb-3">⚙️ 常规参数</h3>
+                                    <div id="settings-display" className="settings-card bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6">
+                                        <div className="border-b border-white/10 pb-3">
+                                            <h3 className="text-sm font-bold text-violet-200">点歌与展示</h3>
+                                            <p className="mt-1 text-[11px] text-gray-500">调整播放衔接、封面显示与通知条样式。</p>
+                                        </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div>
                                                 <label className="block text-xs text-gray-400 mb-2">空闲时点歌行为</label>
@@ -3243,53 +3423,37 @@ const AdminWidget: React.FC = () => {
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs text-gray-400 mb-2">顶部通知停留时长</label>
-                                                <input
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    value={noticeFieldDrafts['OverlayNoticeDurationMs'] ?? String(config.config.OverlayNoticeDurationMs ?? 5000)}
-                                                    onFocus={e => beginNoticeFieldEdit('OverlayNoticeDurationMs', e.currentTarget.value)}
-                                                    onChange={e => changeNoticeFieldDraft('OverlayNoticeDurationMs', e.target.value)}
-                                                    onBlur={() => commitNoticeFieldDraft('OverlayNoticeDurationMs', {
-                                                        minimum: 1000,
-                                                        maximum: 15000,
-                                                        fallback: 5000
-                                                    })}
-                                                    onWheel={e => handleConfigNumberWheel(e, {
-                                                        key: 'OverlayNoticeDurationMs',
-                                                        minimum: 1000,
-                                                        maximum: 15000,
-                                                        step: 100,
-                                                        fallback: 5000
-                                                    })}
-                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
+                                                <BoundedRange
+                                                    label="顶部通知停留时长"
+                                                    value={Number(config.config.OverlayNoticeDurationMs ?? 5000)}
+                                                    minimum={1000}
+                                                    maximum={15000}
+                                                    step={100}
+                                                    minimumLabel="1 秒"
+                                                    maximumLabel="15 秒"
+                                                    formatValue={value => `${Number((value / 1000).toFixed(1))} 秒`}
+                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeDurationMs', value)}
+                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeDurationMs', value)}
+                                                    onEditingChange={handleRangeEditingChange}
                                                 />
-                                                <span className="text-xs text-gray-500 block mt-1.5">单位毫秒，应用于顶部成功/失败通知条；建议 3000 到 7000。</span>
+                                                <span className="text-xs text-gray-500 block mt-1.5">应用于顶部成功/失败通知条，建议 3–7 秒。</span>
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs text-gray-400 mb-2">顶部通知条宽度</label>
-                                                <input
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    value={noticeFieldDrafts['OverlayNoticeWidthPx'] ?? String(config.config.OverlayNoticeWidthPx ?? 720)}
-                                                    onFocus={e => beginNoticeFieldEdit('OverlayNoticeWidthPx', e.currentTarget.value)}
-                                                    onChange={e => changeNoticeFieldDraft('OverlayNoticeWidthPx', e.target.value)}
-                                                    onBlur={() => commitNoticeFieldDraft('OverlayNoticeWidthPx', {
-                                                        minimum: 280,
-                                                        maximum: 1200,
-                                                        fallback: 720
-                                                    })}
-                                                    onWheel={e => handleConfigNumberWheel(e, {
-                                                        key: 'OverlayNoticeWidthPx',
-                                                        minimum: 280,
-                                                        maximum: 1200,
-                                                        step: 10,
-                                                        fallback: 720
-                                                    })}
-                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
+                                                <BoundedRange
+                                                    label="顶部通知条宽度"
+                                                    value={Number(config.config.OverlayNoticeWidthPx ?? 720)}
+                                                    minimum={280}
+                                                    maximum={1200}
+                                                    step={10}
+                                                    minimumLabel="280 px"
+                                                    maximumLabel="1200 px"
+                                                    formatValue={value => `${value} px`}
+                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeWidthPx', value)}
+                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeWidthPx', value)}
+                                                    onEditingChange={handleRangeEditingChange}
                                                 />
-                                                <span className="text-xs text-gray-500 block mt-1.5">单位像素，控制顶部通知条的最大宽度；建议 360 到 760。</span>
+                                                <span className="text-xs text-gray-500 block mt-1.5">控制通知条的最大宽度，建议 360–760 px。</span>
                                             </div>
 
                                             <div>
@@ -3306,30 +3470,20 @@ const AdminWidget: React.FC = () => {
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs text-gray-400 mb-2">顶部通知条透明度</label>
-                                                <input
-                                                    type="text"
-                                                    inputMode="decimal"
-                                                    value={noticeFieldDrafts['OverlayNoticeOpacity'] ?? String(config.config.OverlayNoticeOpacity ?? 0.94)}
-                                                    onFocus={e => beginNoticeFieldEdit('OverlayNoticeOpacity', e.currentTarget.value)}
-                                                    onChange={e => changeNoticeFieldDraft('OverlayNoticeOpacity', e.target.value)}
-                                                    onBlur={() => commitNoticeFieldDraft('OverlayNoticeOpacity', {
-                                                        minimum: 0,
-                                                        maximum: 1,
-                                                        precision: 2,
-                                                        fallback: 0.94
-                                                    })}
-                                                    onWheel={e => handleConfigNumberWheel(e, {
-                                                        key: 'OverlayNoticeOpacity',
-                                                        minimum: 0,
-                                                        maximum: 1,
-                                                        step: 0.05,
-                                                        precision: 2,
-                                                        fallback: 0.94
-                                                    })}
-                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
+                                                <BoundedRange
+                                                    label="顶部通知条透明度"
+                                                    value={Number(config.config.OverlayNoticeOpacity ?? 0.94)}
+                                                    minimum={0}
+                                                    maximum={1}
+                                                    step={0.05}
+                                                    minimumLabel="透明"
+                                                    maximumLabel="不透明"
+                                                    formatValue={value => `${Math.round(value * 100)}%`}
+                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeOpacity', Number(value.toFixed(2)))}
+                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeOpacity', Number(value.toFixed(2)))}
+                                                    onEditingChange={handleRangeEditingChange}
                                                 />
-                                                <span className="text-xs text-gray-500 block mt-1.5">范围 0 到 1。只控制通知卡片主体透明度，文字、头像和红绿状态标记始终保持清晰。</span>
+                                                <span className="text-xs text-gray-500 block mt-1.5">只控制通知卡片主体，文字、头像和状态标记保持清晰。</span>
                                                 <div className="mt-2.5 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs leading-relaxed text-amber-200">
                                                     <span className="font-bold text-amber-300">OBS 浅色半透明提示：</span>
                                                     若降低透明度后卡片发灰，请在 OBS 中右键该浏览器源，将“混合方式”设为“SRGB Off”；“混合模式”保持“普通”。
@@ -3384,10 +3538,10 @@ const AdminWidget: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="bg-white/5 p-6 rounded-xl border border-cyan-500/20 space-y-5 mb-6">
+                                    <div id="settings-api" className="settings-card bg-white/5 p-6 rounded-xl border border-cyan-500/20 space-y-5 mb-6">
                                         <div className="border-b border-white/10 pb-3">
-                                            <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-widest">🔌 外部只读接口</h3>
-                                            <p className="text-xs text-gray-500 mt-2">供 OBS 插件或其他工具读取当前歌曲与待播队列，仅监听本机 127.0.0.1。</p>
+                                            <h3 className="text-sm font-bold text-cyan-300">外部只读接口</h3>
+                                            <p className="text-[11px] text-gray-500 mt-1">供 OBS 插件或其他工具读取当前歌曲与待播队列，仅监听本机 127.0.0.1。</p>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div className="flex justify-between items-center bg-black/30 border border-white/10 rounded-lg p-3">
@@ -3427,9 +3581,12 @@ const AdminWidget: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className={`bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6 relative ${!config.biliLogin ? 'opacity-50' : ''}`}>
-                                        <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-widest border-b border-white/10 pb-3">👑 超级用户白名单</h3>
-                                        <p className="text-sm text-gray-500">主播本人会自动拥有最高权限；这里的旧超级用户仍会完全无视冷却时间和任何点歌、切歌权限限制。</p>
+                                    <div id="settings-permissions" className={`settings-card bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6 relative ${!config.biliLogin ? 'opacity-50' : ''}`}>
+                                        <div className="border-b border-white/10 pb-3">
+                                            <h3 className="text-sm font-bold text-amber-300">用户白名单</h3>
+                                            <p className="mt-1 text-[11px] text-gray-500">管理可以绕过部分限制或执行高级操作的 B站用户。</p>
+                                        </div>
+                                        <p className="text-sm text-gray-500">超级用户会无视冷却时间和所有点歌、切歌权限限制。主播本人不会自动获得该权限，如有需要请手动添加 UID。</p>
                                         {!config.biliLogin && <div className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">游客模式下不可用，请先扫码登录。</div>}
 
                                         <div className="flex gap-3">
@@ -3492,8 +3649,11 @@ const AdminWidget: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className={`bg-white/5 p-6 rounded-xl border border-white/10 ${!config.biliLogin ? 'opacity-50' : ''}`}>
-                                        <h3 className="text-sm font-bold text-green-400 uppercase tracking-widest border-b border-white/10 pb-3 mb-5">🛡️ 弹幕指令权限控制</h3>
+                                    <div className={`settings-card bg-white/5 p-6 rounded-xl border border-white/10 ${!config.biliLogin ? 'opacity-50' : ''}`}>
+                                        <div className="mb-5 border-b border-white/10 pb-3">
+                                            <h3 className="text-sm font-bold text-emerald-300">弹幕指令权限</h3>
+                                            <p className="mt-1 text-[11px] text-gray-500">按指令类型设置房管、白名单、舰队与粉丝牌门槛。</p>
+                                        </div>
                                         {!config.biliLogin && <div className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-5">游客模式固定使用基础权限，以下自定义设置暂不可用。</div>}
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -3534,112 +3694,30 @@ const AdminWidget: React.FC = () => {
                                                             </select>
                                                         </div>
 
-                                                        <div>
-                                                            <label className="block text-xs text-gray-500 mb-1.5">最低粉丝牌等级要求 (0为无限制)</label>
-                                                            <input
-                                                                disabled={!config.biliLogin}
-                                                                type="number"
-                                                                value={pData.MinMedalLevel}
-                                                                onChange={e => updatePermission(pt.key, 'MinMedalLevel', parseInt(e.target.value))}
-                                                                className="w-full bg-black border border-white/10 rounded-lg p-2.5 text-sm text-white outline-none"
-                                                                min="0" max="40"
+                                                        <BoundedRange
+                                                            label="最低粉丝牌等级"
+                                                            value={Number(pData.MinMedalLevel ?? 0)}
+                                                            minimum={0}
+                                                            maximum={40}
+                                                            step={1}
+                                                            minimumLabel="无限制"
+                                                            maximumLabel="Lv.40"
+                                                            formatValue={value => value === 0 ? '无限制' : `Lv.${value}`}
+                                                            disabled={!config.biliLogin}
+                                                            onChange={value => updatePermission(pt.key, 'MinMedalLevel', value)}
+                                                            onCommit={value => persistSysConfigNow({
+                                                                ...config.config,
+                                                                [pt.key]: {
+                                                                    ...pData,
+                                                                    MinMedalLevel: value
+                                                                }
+                                                            })}
+                                                            onEditingChange={handleRangeEditingChange}
                                                             />
-                                                        </div>
                                                     </div>
                                                 );
                                             })}
                                         </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'feedback' && (
-                                <div className="animate-slide-in-right pb-10 space-y-6">
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-white mb-2">问题反馈</h2>
-                                        <p className="text-sm text-gray-400 leading-relaxed">
-                                            在这里提交软件问题、播放器兼容性或功能建议。版本和连接器状态会在你确认后附带，登录 Cookie、二维码凭据、用户白名单和房间号不会上传。
-                                        </p>
-                                    </div>
-
-                                    <div className="bg-white/5 p-6 rounded-xl border border-white/10 space-y-5">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-xs text-gray-400 mb-2">反馈类型</label>
-                                                <select value={feedbackForm.category} onChange={event => setFeedbackForm(previous => ({...previous, category: event.target.value}))} className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white outline-none">
-                                                    <option value="bug">软件问题</option>
-                                                    <option value="connector">连接器问题</option>
-                                                    <option value="compatibility">播放器兼容性</option>
-                                                    <option value="feature">功能建议</option>
-                                                    <option value="other">其他</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-400 mb-2">影响程度</label>
-                                                <select value={feedbackForm.priority} onChange={event => setFeedbackForm(previous => ({...previous, priority: event.target.value}))} className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white outline-none">
-                                                    <option value="normal">一般</option>
-                                                    <option value="high">严重影响使用</option>
-                                                    <option value="critical">完全无法使用</option>
-                                                    <option value="low">轻微</option>
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-xs text-gray-400 mb-2">标题</label>
-                                            <input value={feedbackForm.title} maxLength={120} onChange={event => setFeedbackForm(previous => ({...previous, title: event.target.value}))} placeholder="例如：网易云更新后无法插入下一首" className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500/70" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-400 mb-2">详细描述</label>
-                                            <textarea value={feedbackForm.description} maxLength={8000} onChange={event => setFeedbackForm(previous => ({...previous, description: event.target.value}))} placeholder="请写清复现步骤、预期结果和实际结果" className="w-full min-h-40 bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white outline-none focus:border-blue-500/70 resize-y" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-400 mb-2">联系方式（可选）</label>
-                                            <input value={feedbackForm.contact} maxLength={200} onChange={event => setFeedbackForm(previous => ({...previous, contact: event.target.value}))} placeholder="邮箱、GitHub 或其他联系方式" className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white outline-none" />
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-cyan-500/5 p-5 rounded-xl border border-cyan-500/20 space-y-4">
-                                        <div className="flex items-center justify-between gap-4">
-                                            <div>
-                                                <div className="font-bold text-cyan-300">诊断信息</div>
-                                                <div className="text-xs text-gray-400 mt-1">包含本体、系统、播放器与四个连接器版本，以及队列数量和连接状态。</div>
-                                            </div>
-                                            <button onClick={() => setFeedbackIncludeDiagnostics(previous => !previous)} className={`w-11 h-6 rounded-full p-1 transition-colors shrink-0 ${feedbackIncludeDiagnostics ? 'bg-cyan-600' : 'bg-gray-600'}`}>
-                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${feedbackIncludeDiagnostics ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                                            </button>
-                                        </div>
-                                        <label className={`flex items-center gap-3 text-sm ${feedbackIncludeDiagnostics ? 'text-gray-300' : 'text-gray-600'}`}>
-                                            <input type="checkbox" disabled={!feedbackIncludeDiagnostics} checked={feedbackIncludeLogs} onChange={event => setFeedbackIncludeLogs(event.target.checked)} className="w-4 h-4" />
-                                            同时附带最近 80 条运行日志（令牌、Cookie 等字段会自动隐藏）
-                                        </label>
-                                        {feedbackIncludeDiagnostics && (
-                                            <details className="bg-black/30 rounded-lg border border-white/5">
-                                                <summary className="cursor-pointer px-4 py-3 text-xs text-cyan-300 font-bold">
-                                                    {feedbackLoading ? '正在刷新诊断…' : '预览将要提交的诊断信息'}
-                                                </summary>
-                                                <pre className="px-4 pb-4 text-[11px] leading-relaxed text-gray-400 overflow-auto max-h-72 whitespace-pre-wrap break-all">
-                                                    {JSON.stringify(feedbackDiagnostics?.diagnostics || {}, null, 2)}
-                                                </pre>
-                                            </details>
-                                        )}
-                                    </div>
-
-                                    {feedbackResult && (
-                                        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-5 text-sm text-green-200">
-                                            <div className="font-bold text-green-400 mb-1">反馈提交成功：{feedbackResult.id}</div>
-                                            <div className="text-xs text-gray-400 mb-3">请保存编号；处理进度与公开回复可以随时查询。</div>
-                                            <a href={feedbackResult.trackingUrl} target="_blank" rel="noreferrer" className="inline-block px-4 py-2 rounded-lg bg-green-600/30 border border-green-500/40 hover:bg-green-600/40">打开反馈进度页</a>
-                                        </div>
-                                    )}
-
-                                    <div className="flex flex-wrap gap-3">
-                                        <button disabled={feedbackSubmitting || feedbackLoading} onClick={handleFeedbackSubmit} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors">
-                                            {feedbackSubmitting ? '正在提交…' : '提交反馈'}
-                                        </button>
-                                        <a href="https://app.enkianss.us/feedback" target="_blank" rel="noreferrer" className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 rounded-xl text-sm font-bold transition-colors">
-                                            使用网页提交
-                                        </a>
                                     </div>
                                 </div>
                             )}
@@ -3684,49 +3762,9 @@ const AdminWidget: React.FC = () => {
                                 </div>
                             )}
 
-                            {activeTab === 'update' && (
-                                <div className="space-y-6 animate-slide-in-right flex flex-col items-center text-center pt-10">
-                                    <h2 className="text-2xl font-bold text-white mb-2 self-start w-full max-w-md">自动更新管理</h2>
-                                    <div className="bg-white/5 p-8 rounded-2xl border border-white/10 flex flex-col items-center justify-center w-full max-w-md shadow-xl">
-                                        <div className="text-6xl mb-5">🚀</div>
-
-                                        <div className="text-sm text-green-400 font-bold mb-8 bg-green-500/10 px-4 py-1.5 rounded-full border border-green-500/20">
-                                            当前运行版本: v{config.version || '未知'}
-                                        </div>
-
-                                        <p className="text-sm text-gray-400 mb-8 leading-relaxed">一键连接 GitHub 检查最新版本。</p>
-
-                                        {downloadProgress !== null ? (
-                                            <div className="bg-green-900/30 border border-green-500/30 p-5 rounded-xl w-full text-left">
-                                                <div className="text-green-400 font-bold text-md mb-2 flex justify-between">
-                                                    <span>🚀 正在下载更新...</span>
-                                                    <span>{Math.floor(downloadProgress)}%</span>
-                                                </div>
-                                                <div className="w-full bg-black/50 h-3 rounded-full overflow-hidden">
-                                                    <div
-                                                        className="bg-green-500 h-full transition-all duration-300 ease-out"
-                                                        style={{ width: `${downloadProgress}%` }}
-                                                    ></div>
-                                                </div>
-                                                <div className="text-xs text-green-400/70 mt-3 text-center">下载完成后程序将自动重启，请勿关闭本窗口</div>
-                                            </div>
-                                        ) : updateInfo.info?.hasUpdate ? (
-                                            <div className="bg-green-900/30 border border-green-500/30 p-5 rounded-xl w-full">
-                                                <div className="text-green-400 font-bold text-md mb-4">🎉 发现新版本: {updateInfo.info.version}</div>
-                                                <button onClick={handleApplyUpdate} className="px-5 py-3 bg-green-600 hover:bg-green-500 text-white text-md rounded-xl font-bold shadow-lg w-full transition-colors">立刻下载并重启更新</button>
-                                            </div>
-                                        ) : (
-                                            <button onClick={handleUpdateCheck} disabled={updateInfo.checking} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-md rounded-xl font-bold shadow-lg disabled:opacity-50 transition-colors w-full">
-                                                {updateInfo.checking ? '正在检查 GitHub...' : '检查最新更新'}
-                                            </button>
-                                        )}
-                                        {updateInfo.info?.error && <div className="mt-4 text-red-400 text-sm">{updateInfo.info.error}</div>}
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     )}
-                </div>
+                </main>
             </div>
         </div>
     );
