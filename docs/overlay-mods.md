@@ -1,6 +1,6 @@
 # Mod UI 开发与发布
 
-嗷呜点歌机 1.1.5 起支持安装纯静态 OBS Mod UI。OBS 始终使用点歌机“运行状态”中显示的 `/overlay/` 地址；安装或切换主题不会改变这个地址。
+易点椿曲 1.1.5 起支持安装纯静态 OBS Mod UI。OBS 始终使用点歌机“运行状态”中显示的 `/overlay/` 地址；安装或切换主题不会改变这个地址。
 
 ## ZIP 结构
 
@@ -64,4 +64,4 @@ app.js
 - `GET /api/v1/queue`：待播队列。
 - `WebSocket /ws`：状态变化推送，消息为 `{ "type": "state", "data": ... }`。
 
-参考实现位于 [AwooMusicBot-Overlay-Default](https://github.com/Enkianssus/AwooMusicBot-Overlay-Default)。
+参考实现位于 [HaruMusicBot-Overlay-Default](https://github.com/Enkianssus/HaruMusicBot-Overlay-Default)。

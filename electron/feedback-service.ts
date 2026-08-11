@@ -40,7 +40,7 @@ export async function submitFeedback(
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
-        'User-Agent': 'AwooMusicBot-Feedback/1.1'
+        'User-Agent': 'HaruMusicBot-Feedback/1.1'
       },
       body: JSON.stringify({
         ...submission,

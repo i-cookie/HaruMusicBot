@@ -1,9 +1,9 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.enkianssus.awoomusicbot",
+  "appId": "com.enkianssus.harumusicbot",
   "asar": true,
-  "productName": "嗷呜点歌机",
+  "productName": "易点椿曲",
   "directories": {
     "output": "release/${version}"
   },
@@ -27,7 +27,7 @@
         ]
       }
     ],
-    "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
+    "artifactName": "haru-musicbot-setup-${version}.${ext}"
   },
   "nsis": {
     "oneClick": false,

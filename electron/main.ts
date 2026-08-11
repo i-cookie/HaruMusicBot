@@ -27,7 +27,11 @@ import {
   normalizeLocalSongRequestMode
 } from './local-test-api-policy';
 import type { LocalSongRequestMode } from './local-test-api-policy';
-import { hasPendingSongRequestByUser } from './song-request-policy';
+import {
+  hasPendingSongRequestByUser,
+  normalizeUserIdList,
+  userIdInList
+} from './song-request-policy';
 import {
   getNeteaseSongCover
 } from './players/netease-player';
@@ -55,12 +59,12 @@ import {
 const customRequire = createRequire(import.meta.url);
 const { UpdateManager } = customRequire('velopack');
 
-// 1.1 起底层包名与仓库改为 Awoo MusicBot；面向用户仍使用“嗷呜点歌机”。
+// 1.1 起底层包名与仓库改为 HaruMusicBot；面向用户使用“易点椿曲”。
 // 继续沿用旧用户数据目录，确保升级时保留登录信息、播放器选择和连接器安装状态。
 if (process.platform === 'win32') {
   app.setPath(
     'userData',
-    path.join(app.getPath('appData'), '嗷呜点歌机')
+    path.join(app.getPath('appData'), '易点椿曲')
   );
 }
 
@@ -284,6 +288,13 @@ let appConfig: any = {
     RequestedSongArtwork: 'bili_avatar',
     ShowAllDanmaku: false,
     SuperUsers: [],
+    RequestWhitelistUsers: [],
+    CooldownWhitelistExempt: false,
+    SinglePendingRequestWhitelistExempt: false,
+    OverlayNoticeDurationMs: 5000,
+    OverlayNoticeWidthPx: 720,
+    OverlayNoticeTheme: 'dark',
+    OverlayNoticeOpacity: 0.94,
     ExternalHttpEnabled: false,
     ExternalWebSocketEnabled: false,
     ExternalApiPort: 5556
@@ -297,7 +308,7 @@ function loadConfig() {
       appConfig = { ...appConfig, ...saved };
 
       if (!appConfig.sysConfig) {
-        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, SinglePendingRequestPerUser: false, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
+        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, SinglePendingRequestPerUser: false, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], RequestWhitelistUsers: [], CooldownWhitelistExempt: false, SinglePendingRequestWhitelistExempt: false, OverlayNoticeDurationMs: 5000, OverlayNoticeWidthPx: 720, OverlayNoticeTheme: 'dark', OverlayNoticeOpacity: 0.94, ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
       }
       if (!['NCM', 'Kugou', 'QQMusic', 'Folia'].includes(appConfig.sysConfig.PlayerType)) appConfig.sysConfig.PlayerType = 'NCM';
       if (appConfig.sysConfig.FoliaToken === undefined) appConfig.sysConfig.FoliaToken = '';
@@ -305,6 +316,29 @@ function loadConfig() {
       if (appConfig.sysConfig.ShowPlayerCurrentTrack === undefined) appConfig.sysConfig.ShowPlayerCurrentTrack = true;
       if (appConfig.sysConfig.PauseAfterRequests === undefined) appConfig.sysConfig.PauseAfterRequests = false;
       if (!['bili_avatar', 'song_cover'].includes(appConfig.sysConfig.RequestedSongArtwork)) appConfig.sysConfig.RequestedSongArtwork = 'bili_avatar';
+      appConfig.sysConfig.SuperUsers = normalizeUserIdList(appConfig.sysConfig.SuperUsers);
+      appConfig.sysConfig.RequestWhitelistUsers = normalizeUserIdList(appConfig.sysConfig.RequestWhitelistUsers);
+      if (appConfig.sysConfig.CooldownWhitelistExempt === undefined) appConfig.sysConfig.CooldownWhitelistExempt = false;
+      if (appConfig.sysConfig.SinglePendingRequestWhitelistExempt === undefined) appConfig.sysConfig.SinglePendingRequestWhitelistExempt = false;
+      const overlayNoticeDurationMs = Number(appConfig.sysConfig.OverlayNoticeDurationMs);
+      appConfig.sysConfig.OverlayNoticeDurationMs = (
+        Number.isFinite(overlayNoticeDurationMs)
+        && overlayNoticeDurationMs >= 1000
+        && overlayNoticeDurationMs <= 15000
+      ) ? Math.round(overlayNoticeDurationMs) : 5000;
+      const overlayNoticeWidthPx = Number(appConfig.sysConfig.OverlayNoticeWidthPx);
+      appConfig.sysConfig.OverlayNoticeWidthPx = (
+        Number.isFinite(overlayNoticeWidthPx)
+        && overlayNoticeWidthPx >= 280
+        && overlayNoticeWidthPx <= 1200
+      ) ? Math.round(overlayNoticeWidthPx) : 720;
+      appConfig.sysConfig.OverlayNoticeTheme = appConfig.sysConfig.OverlayNoticeTheme === 'light' ? 'light' : 'dark';
+      const overlayNoticeOpacity = Number(appConfig.sysConfig.OverlayNoticeOpacity);
+      appConfig.sysConfig.OverlayNoticeOpacity = (
+        Number.isFinite(overlayNoticeOpacity)
+        && overlayNoticeOpacity >= 0.35
+        && overlayNoticeOpacity <= 1
+      ) ? Math.round(overlayNoticeOpacity * 100) / 100 : 0.94;
       if (appConfig.sysConfig.ExternalHttpEnabled === undefined) appConfig.sysConfig.ExternalHttpEnabled = false;
       if (appConfig.sysConfig.ExternalWebSocketEnabled === undefined) appConfig.sysConfig.ExternalWebSocketEnabled = false;
       const apiPort = Number(appConfig.sysConfig.ExternalApiPort);
@@ -462,6 +496,14 @@ const playerManager = new PlayerManager({
 
 const userCooldowns = new Map<string, number>();
 let recentRejects: { id: number, user: any, reason: string }[] = [];
+let recentSuccesses: {
+  id: number,
+  user: any,
+  title: string,
+  detail: string,
+  songName: string,
+  queueAheadCount: number
+}[] = [];
 
 async function addReject(user: any, reason: string) {
   const avatarUrl = user.avatar || await getBiliAvatar(user.uid);
@@ -469,6 +511,29 @@ async function addReject(user: any, reason: string) {
   recentRejects.push(rejectItem);
   if (recentRejects.length > 5) recentRejects.shift();
   setTimeout(() => { recentRejects = recentRejects.filter(r => r.id !== rejectItem.id); }, 5000);
+}
+
+async function addSuccess(
+  user: any,
+  title: string,
+  detail: string,
+  songName: string,
+  queueAheadCount: number
+) {
+  const avatarUrl = user.avatar || await getBiliAvatar(user.uid);
+  const successItem = {
+    id: Date.now() + Math.random(),
+    user: { ...user, avatar: avatarUrl },
+    title,
+    detail,
+    songName,
+    queueAheadCount
+  };
+  recentSuccesses.push(successItem);
+  if (recentSuccesses.length > 5) recentSuccesses.shift();
+  setTimeout(() => {
+    recentSuccesses = recentSuccesses.filter(item => item.id !== successItem.id);
+  }, 5000);
 }
 
 // ==========================================
@@ -738,6 +803,29 @@ function parseBiliPacket(buffer: Buffer) {
   }
 }
 
+function isSuperUser(user: any): boolean {
+  return userIdInList(user?.uid, appConfig.sysConfig?.SuperUsers);
+}
+
+function isGlobalPrivilegedUser(user: any): boolean {
+  return isSuperUser(user);
+}
+
+function isRequestWhitelistUser(user: any): boolean {
+  return userIdInList(user?.uid, appConfig.sysConfig?.RequestWhitelistUsers);
+}
+
+function getPermissionConfig(permKey: string): any {
+  const defaultGuardType = permKey === 'ForceControlPermission' ? -1 : 0;
+  return {
+    AllowManager: true,
+    AllowWhitelist: false,
+    MinGuardType: defaultGuardType,
+    MinMedalLevel: 0,
+    ...(appConfig.sysConfig?.[permKey] || {})
+  };
+}
+
 function checkPermission(user: any, permKey: string): { allowed: boolean, reason?: string } {
   if (!isBiliLoginReady()) {
     if (
@@ -751,9 +839,9 @@ function checkPermission(user: any, permKey: string): { allowed: boolean, reason
       reason: '游客模式仅开放普通点歌和撤回自己的歌曲，请先扫码登录使用控制指令'
     };
   }
-  if (appConfig.sysConfig?.SuperUsers?.includes(user.uname) || appConfig.sysConfig?.SuperUsers?.includes(user.uid)) return { allowed: true };
-  const defaultGuardType = permKey === 'ForceControlPermission' ? -1 : 0;
-  const perm = appConfig.sysConfig?.[permKey] || { AllowManager: true, MinGuardType: defaultGuardType, MinMedalLevel: 0 };
+  if (isGlobalPrivilegedUser(user)) return { allowed: true };
+  const perm = getPermissionConfig(permKey);
+  if (perm.AllowWhitelist === true && isRequestWhitelistUser(user)) return { allowed: true };
   if (perm.MinGuardType === -1) {
     if (perm.AllowManager && user.isManager) return { allowed: true };
     return { allowed: false, reason: "仅限房管及以上操作" };
@@ -1702,6 +1790,11 @@ async function tryRequestSong(
     if (
       mode === 'normal'
       && appConfig.sysConfig?.SinglePendingRequestPerUser === true
+      && !isGlobalPrivilegedUser(user)
+      && !(
+        appConfig.sysConfig?.SinglePendingRequestWhitelistExempt === true
+        && isRequestWhitelistUser(user)
+      )
       && hasPendingSongRequestByUser(user.uid, targetQueue, currentPlayingSong)
     ) {
       const message = '你的上一首点歌仍在队列中或正在播放，请等待播完后再点';
@@ -1747,6 +1840,10 @@ async function tryRequestSong(
       GuardLevel: user.guardLevel
     };
     cancelledNativeNextSongs.delete(getQueueSongIdentity(newSong));
+    const getQueueAheadCount = (): number => {
+      const index = targetQueue.findIndex(song => song === newSong);
+      return index >= 0 ? index : 0;
+    };
 
     if (mode === 'interrupt') {
       await waitForManagedPlayerActionSettlement();
@@ -1754,6 +1851,15 @@ async function tryRequestSong(
       setGlobalStatus(`⚡ 插队: ${newSong.SongName}`);
       const playbackConfirmed = await playSongNow(newSong, 'interrupt');
       if (!playbackConfirmed) targetQueue.unshift(newSong);
+      await addSuccess(
+        user,
+        `${newSong.OrderedBy} 插队点歌成功`,
+        playbackConfirmed
+          ? `正在播放《${newSong.SongName}》`
+          : `《${newSong.SongName}》已保留到队首，等待接管播放`,
+        newSong.SongName,
+        getQueueAheadCount()
+      );
       return {
         success: true,
         mode,
@@ -1772,6 +1878,15 @@ async function tryRequestSong(
       setGlobalStatus(`▶️ 立即: ${newSong.SongName}`);
       const playbackConfirmed = await playSongNow(newSong);
       if (!playbackConfirmed) targetQueue.unshift(newSong);
+      await addSuccess(
+        user,
+        `${newSong.OrderedBy} 点歌成功`,
+        playbackConfirmed
+          ? `正在立即播放《${newSong.SongName}》`
+          : `《${newSong.SongName}》已保留到队首，等待接管播放`,
+        newSong.SongName,
+        getQueueAheadCount()
+      );
       return {
         success: true,
         mode,
@@ -1808,6 +1923,17 @@ async function tryRequestSong(
         guardRegistered = await guardNextSong(targetQueue[0]);
       }
     }
+    await addSuccess(
+      user,
+      mode === 'top'
+        ? `${newSong.OrderedBy} 优先点歌成功`
+        : `${newSong.OrderedBy} 点歌成功`,
+      mode === 'top'
+        ? `《${newSong.SongName}》已置顶到待播队首`
+        : `《${newSong.SongName}》已加入待播队列`,
+      newSong.SongName,
+      getQueueAheadCount()
+    );
     return {
       success: true,
       mode,
@@ -1909,10 +2035,12 @@ async function handleDanmaku(user: any, msg: string): Promise<void> {
     else if (isTopOrder) { keyword = msg.replace(/^(置顶点歌|优先点歌)/, '').trim(); mode = 'top'; }
     else { keyword = msg.substring(2).trim(); }
 
-    const isSuperUser = isBiliLoginReady()
-      && (appConfig.sysConfig?.SuperUsers?.includes(user.uname)
-        || appConfig.sysConfig?.SuperUsers?.includes(user.uid));
-    if (!isSuperUser) {
+    const cooldownExempt = isGlobalPrivilegedUser(user)
+      || (
+        appConfig.sysConfig?.CooldownWhitelistExempt === true
+        && isRequestWhitelistUser(user)
+      );
+    if (!cooldownExempt) {
       const cds = appConfig.sysConfig?.Cooldowns || { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 };
       let cdSeconds = cds.Normal;
       if (user.guardLevel === 3) cdSeconds = cds.Captain;
@@ -1930,7 +2058,7 @@ async function handleDanmaku(user: any, msg: string): Promise<void> {
     else { const perm = checkPermission(user, 'OrderPermission'); if (!perm.allowed) { await addReject(user, perm.reason!); return; } }
 
     if (keyword) {
-      userCooldowns.set(user.uid, Date.now());
+      if (!cooldownExempt) userCooldowns.set(user.uid, Date.now());
       await tryRequestSong(user, keyword, mode);
     }
   }
@@ -2320,28 +2448,28 @@ const OBS_OVERLAY_HOST_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>嗷呜点歌机 Mod UI</title>
+  <title>易点椿曲 Mod UI</title>
   <link rel="stylesheet" href="/overlay/host.css">
   <script src="/overlay/host.js" defer></script>
 </head>
 <body>
-  <iframe id="awoo-overlay-frame" title="嗷呜点歌机 Mod UI" sandbox="allow-scripts"></iframe>
+  <iframe id="haru-overlay-frame" title="易点椿曲 Mod UI" sandbox="allow-scripts"></iframe>
   <div id="awoo-overlay-status">正在载入 Mod UI…</div>
 </body>
 </html>`;
 
 const OBS_OVERLAY_HOST_CSS = `
-html,body,#awoo-overlay-frame{width:100%;height:100%;margin:0;background:transparent}
+html,body,#haru-overlay-frame{width:100%;height:100%;margin:0;background:transparent}
 body{overflow:hidden}
-#awoo-overlay-frame{display:block;border:0;opacity:0;transition:opacity .16s ease}
-#awoo-overlay-frame[data-ready="true"]{opacity:1}
+#haru-overlay-frame{display:block;border:0;opacity:0;transition:opacity .16s ease}
+#haru-overlay-frame[data-ready="true"]{opacity:1}
 #awoo-overlay-status{position:fixed;left:16px;top:16px;padding:8px 11px;border:1px solid rgba(120,190,255,.35);border-radius:10px;background:rgba(12,24,40,.72);color:#bfe3ff;font:12px/1.4 system-ui,sans-serif}
-#awoo-overlay-frame[data-ready="true"]+#awoo-overlay-status{display:none}
+#haru-overlay-frame[data-ready="true"]+#awoo-overlay-status{display:none}
 `;
 
 const OBS_OVERLAY_HOST_JS = `
 (function(){
-  var frame=document.getElementById('awoo-overlay-frame');
+  var frame=document.getElementById('haru-overlay-frame');
   var status=document.getElementById('awoo-overlay-status');
   var revision='';
   function refresh(){
@@ -2706,7 +2834,7 @@ function startBackendServer() {
       const displayCurrent = currentPlayingSong || (showPlayerCurrentTrack ? playerCurrentTrack : null);
       const requestedSongArtwork = appConfig.sysConfig?.RequestedSongArtwork === 'song_cover' ? 'song_cover' : 'bili_avatar';
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, rejects: recentRejects, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
+      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity: Number(appConfig.sysConfig?.OverlayNoticeOpacity) || 0.94, rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
       return;
     }
 
@@ -2877,6 +3005,29 @@ function startBackendServer() {
         if (!['NCM', 'Kugou', 'QQMusic', 'Folia'].includes(appConfig.sysConfig?.PlayerType)) appConfig.sysConfig.PlayerType = 'NCM';
         if (appConfig.sysConfig.FoliaToken === undefined) appConfig.sysConfig.FoliaToken = '';
         if (appConfig.sysConfig.SinglePendingRequestPerUser === undefined) appConfig.sysConfig.SinglePendingRequestPerUser = false;
+        appConfig.sysConfig.SuperUsers = normalizeUserIdList(appConfig.sysConfig.SuperUsers);
+        appConfig.sysConfig.RequestWhitelistUsers = normalizeUserIdList(appConfig.sysConfig.RequestWhitelistUsers);
+        if (appConfig.sysConfig.CooldownWhitelistExempt === undefined) appConfig.sysConfig.CooldownWhitelistExempt = false;
+        if (appConfig.sysConfig.SinglePendingRequestWhitelistExempt === undefined) appConfig.sysConfig.SinglePendingRequestWhitelistExempt = false;
+        const overlayNoticeDurationMs = Number(appConfig.sysConfig.OverlayNoticeDurationMs);
+        appConfig.sysConfig.OverlayNoticeDurationMs = (
+          Number.isFinite(overlayNoticeDurationMs)
+          && overlayNoticeDurationMs >= 1000
+          && overlayNoticeDurationMs <= 15000
+        ) ? Math.round(overlayNoticeDurationMs) : 5000;
+        const overlayNoticeWidthPx = Number(appConfig.sysConfig.OverlayNoticeWidthPx);
+        appConfig.sysConfig.OverlayNoticeWidthPx = (
+          Number.isFinite(overlayNoticeWidthPx)
+          && overlayNoticeWidthPx >= 280
+          && overlayNoticeWidthPx <= 1200
+        ) ? Math.round(overlayNoticeWidthPx) : 720;
+        appConfig.sysConfig.OverlayNoticeTheme = appConfig.sysConfig.OverlayNoticeTheme === 'light' ? 'light' : 'dark';
+        const overlayNoticeOpacity = Number(appConfig.sysConfig.OverlayNoticeOpacity);
+        appConfig.sysConfig.OverlayNoticeOpacity = (
+          Number.isFinite(overlayNoticeOpacity)
+          && overlayNoticeOpacity >= 0.35
+          && overlayNoticeOpacity <= 1
+        ) ? Math.round(overlayNoticeOpacity * 100) / 100 : 0.94;
         appConfig.sysConfig.ExternalApiPort = getExternalApiPort();
         delete appConfig.sysConfig.EnableCDP;
         delete appConfig.sysConfig.CdpPort;
@@ -3336,7 +3487,7 @@ function startBackendServer() {
 // 程序启动入口
 // ==========================================
 app.whenReady().then(() => {
-  writeLog('=== 嗷呜点歌机内部日志已连接 ===', 'Cyan');
+  writeLog('=== 易点椿曲内部日志已连接 ===', 'Cyan');
   loadConfig();
   attachInternalApiTokenToAppSession();
   void startPlayerBridge();

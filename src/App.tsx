@@ -101,6 +101,25 @@ interface ToastInfo {
     msg: string;
 }
 
+interface OverlayNotice {
+    id: number;
+    user: {
+        name?: string;
+        uname?: string;
+        avatar?: string;
+    };
+    title?: string;
+    detail?: string;
+    reason?: string;
+    songName?: string;
+    queueAheadCount?: number;
+}
+
+interface BannerNotice extends OverlayNotice {
+    kind: 'success' | 'failure';
+    phase: 'visible' | 'leaving';
+}
+
 interface DragInfo {
     type: 'current' | 'queue';
     index: number;
@@ -187,6 +206,14 @@ const GlobalStyles: React.FC = () => (
     @keyframes slideInRight { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
     @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
     @keyframes toastSlideIn { from { opacity: 0; transform: translate(-50%, -20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @keyframes bannerDropIn {
+        from { opacity: 0; transform: translateY(-140%) scale(0.92); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes bannerRetract {
+        from { opacity: 1; transform: translateY(0) scale(1); }
+        to { opacity: 0; transform: translateY(-140%) scale(0.94); }
+    }
     
     html, body, #root { 
         background: transparent !important; 
@@ -217,6 +244,200 @@ const GlobalStyles: React.FC = () => (
     .no-drag { -webkit-app-region: no-drag; }
   `}</style>
 );
+
+const SuccessBannerOverlay: React.FC = () => {
+    const bannerExitMs = 420;
+    const [notices, setNotices] = useState<BannerNotice[]>([]);
+    const bannerVisibleMsRef = useRef<number>(5000);
+    const bannerWidthPxRef = useRef<number>(720);
+    const bannerThemeRef = useRef<'light' | 'dark'>('dark');
+    const bannerOpacityRef = useRef<number>(0.94);
+    const lastSuccessIdRef = useRef<number>(0);
+    const lastRejectIdRef = useRef<number>(0);
+    const exitTimerRefs = useRef<Map<number, number>>(new Map());
+    const clearTimerRefs = useRef<Map<number, number>>(new Map());
+
+    useEffect(() => {
+        const clearTimers = () => {
+            exitTimerRefs.current.forEach(timer => window.clearTimeout(timer));
+            clearTimerRefs.current.forEach(timer => window.clearTimeout(timer));
+            exitTimerRefs.current.clear();
+            clearTimerRefs.current.clear();
+        };
+
+        const showNotice = (notice: OverlayNotice, kind: 'success' | 'failure') => {
+            setNotices(prev => [{ ...notice, kind, phase: 'visible' }, ...prev]);
+
+            const exitTimer = window.setTimeout(() => {
+                setNotices(prev => prev.map(item => (
+                    item.id === notice.id
+                        ? { ...item, phase: 'leaving' }
+                        : item
+                )));
+            }, bannerVisibleMsRef.current);
+
+            const clearTimer = window.setTimeout(() => {
+                setNotices(prev => prev.filter(item => item.id !== notice.id));
+                exitTimerRefs.current.delete(notice.id);
+                clearTimerRefs.current.delete(notice.id);
+            }, bannerVisibleMsRef.current + bannerExitMs);
+
+            exitTimerRefs.current.set(notice.id, exitTimer);
+            clearTimerRefs.current.set(notice.id, clearTimer);
+        };
+
+        const fetchLatest = async () => {
+            try {
+                const res = await fetch('http://localhost:5555/data', { cache: 'no-store' });
+                if (!res.ok) return;
+                const json: any = await res.json();
+                const nextVisibleMs = Number(json.overlayNoticeDurationMs);
+                bannerVisibleMsRef.current = Number.isFinite(nextVisibleMs) && nextVisibleMs >= 1000
+                    ? nextVisibleMs
+                    : 5000;
+                const nextWidthPx = Number(json.overlayNoticeWidthPx);
+                bannerWidthPxRef.current = Number.isFinite(nextWidthPx) && nextWidthPx >= 280
+                    ? nextWidthPx
+                    : 720;
+                bannerThemeRef.current = json.overlayNoticeTheme === 'light' ? 'light' : 'dark';
+                const nextOpacity = Number(json.overlayNoticeOpacity);
+                bannerOpacityRef.current = Number.isFinite(nextOpacity) && nextOpacity >= 0.35
+                    ? Math.min(1, nextOpacity)
+                    : 0.94;
+                const successes: OverlayNotice[] = Array.isArray(json.successes) ? json.successes : [];
+                const rejects: OverlayNotice[] = Array.isArray(json.rejects) ? json.rejects : [];
+                const incoming = [
+                    ...successes
+                        .filter(item => typeof item.id === 'number' && item.id > lastSuccessIdRef.current)
+                        .map(item => ({ ...item, kind: 'success' as const })),
+                    ...rejects
+                        .filter(item => typeof item.id === 'number' && item.id > lastRejectIdRef.current)
+                        .map(item => ({ ...item, kind: 'failure' as const }))
+                ].sort((a, b) => a.id - b.id);
+                if (incoming.length === 0) return;
+                const successItems = incoming.filter(item => item.kind === 'success');
+                const rejectItems = incoming.filter(item => item.kind === 'failure');
+                const latestSuccess = successItems.length > 0 ? successItems[successItems.length - 1] : null;
+                const latestReject = rejectItems.length > 0 ? rejectItems[rejectItems.length - 1] : null;
+                if (latestSuccess) lastSuccessIdRef.current = latestSuccess.id;
+                if (latestReject) lastRejectIdRef.current = latestReject.id;
+                incoming.forEach(item => showNotice(item, item.kind));
+            } catch {
+                // Keep the browser source transparent while offline.
+            }
+        };
+
+        void fetchLatest();
+        const timer = window.setInterval(fetchLatest, 600);
+        return () => {
+            window.clearInterval(timer);
+            clearTimers();
+        };
+    }, []);
+
+    return (
+        <div className="w-screen h-screen bg-transparent overflow-hidden pointer-events-none relative">
+            {notices.length > 0 && (
+                <div className="absolute top-0 left-1/2 flex -translate-x-1/2 flex-col gap-3 pt-3 transition-transform duration-300 ease-out">
+                    {notices.map(notice => {
+                        const userName = notice.user?.name || notice.user?.uname || 'Guest';
+                        const songName = notice.songName || notice.detail || 'Unknown Song';
+                        const aheadCount = Math.max(0, Number(notice.queueAheadCount || 0));
+                        const failedSongMatch = /未搜到歌曲:\s*(.+)$/.exec(notice.reason || '');
+                        const failedSongName = failedSongMatch?.[1]?.trim();
+                        const bannerText = notice.kind === 'success'
+                            ? `${userName}\u70b9\u6b4c\u300a${songName}\u300b\u6210\u529f\uff0c\u524d\u9762\u8fd8\u6709${aheadCount}\u9996\u6b4c`
+                            : failedSongName
+                                ? `${userName}\u70b9\u6b4c\u300a${failedSongName}\u300b\u5931\u8d25\uff0c${notice.reason?.replace(/未搜到歌曲:\s*(.+)$/, '未搜到歌曲') || '请求未通过'}`
+                                : `${userName}\u70b9\u6b4c\u5931\u8d25\uff0c${notice.reason || '请求未通过'}`;
+                        const bannerAnimation = notice.phase === 'visible'
+                            ? 'bannerDropIn 320ms cubic-bezier(0.22, 1, 0.36, 1) forwards'
+                            : `bannerRetract ${bannerExitMs}ms cubic-bezier(0.4, 0, 1, 1) forwards`;
+                        const isLightTheme = bannerThemeRef.current === 'light';
+                        const alpha = bannerOpacityRef.current;
+                        const containerStyle = isLightTheme
+                            ? {
+                                background: notice.kind === 'success'
+                                    ? `linear-gradient(180deg, rgba(247,255,251,${alpha}), rgba(231,250,241,${Math.max(0.2, alpha - 0.08)}))`
+                                    : `linear-gradient(180deg, rgba(255,248,248,${alpha}), rgba(255,236,236,${Math.max(0.2, alpha - 0.08)}))`,
+                                borderColor: notice.kind === 'success'
+                                    ? 'rgba(52, 211, 153, 0.34)'
+                                    : 'rgba(248, 113, 113, 0.34)',
+                                boxShadow: notice.kind === 'success'
+                                    ? '0 22px 50px rgba(20, 83, 45, 0.18)'
+                                    : '0 22px 50px rgba(127, 29, 29, 0.18)',
+                                color: '#111827'
+                            }
+                            : {
+                                background: notice.kind === 'success'
+                                    ? `linear-gradient(180deg, rgba(16,40,32,${alpha}), rgba(8,16,13,${Math.max(0.2, alpha - 0.08)}))`
+                                    : `linear-gradient(180deg, rgba(52,20,24,${alpha}), rgba(20,8,11,${Math.max(0.2, alpha - 0.08)}))`,
+                                borderColor: notice.kind === 'success'
+                                    ? 'rgba(110, 231, 183, 0.2)'
+                                    : 'rgba(252, 165, 165, 0.2)',
+                                boxShadow: notice.kind === 'success'
+                                    ? '0 22px 50px rgba(0,0,0,0.45)'
+                                    : '0 22px 50px rgba(0,0,0,0.5)',
+                                color: '#ffffff'
+                            };
+                        const accentStyle = {
+                            backgroundColor: notice.kind === 'success'
+                                ? (isLightTheme ? 'rgba(16, 185, 129, 0.28)' : 'rgba(167, 243, 208, 0.25)')
+                                : (isLightTheme ? 'rgba(239, 68, 68, 0.26)' : 'rgba(254, 202, 202, 0.25)')
+                        };
+                        const avatarFrameStyle = {
+                            borderColor: isLightTheme ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255,255,255,0.15)',
+                            backgroundColor: isLightTheme ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.08)'
+                        };
+                        const metaTextClass = isLightTheme ? 'text-slate-500' : 'text-white/45';
+                        const lineStyle = { backgroundColor: isLightTheme ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255,255,255,0.08)' };
+                        const bodyTextClass = isLightTheme ? 'text-slate-900' : 'text-white';
+                        const tagText = notice.kind === 'success' ? 'REQUEST ACCEPTED' : 'REQUEST REJECTED';
+
+                        return (
+                            <div
+                                key={notice.id}
+                                style={{
+                                    animation: bannerAnimation,
+                                    width: `min(${bannerWidthPxRef.current}px, calc(100vw - 24px))`,
+                                    ...containerStyle
+                                }}
+                                className="min-w-[280px] rounded-[28px] border backdrop-blur-xl transition-transform duration-300 ease-out"
+                            >
+                                <div style={accentStyle} className="absolute inset-x-6 top-0 h-px"></div>
+                                <div className="flex items-center gap-3 px-4 py-3">
+                                    <div style={avatarFrameStyle} className="h-11 w-11 shrink-0 overflow-hidden rounded-full border self-start">
+                                        {notice.user.avatar ? (
+                                            <img
+                                                src={notice.user.avatar}
+                                                alt=""
+                                                referrerPolicy="no-referrer"
+                                                className="h-full w-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className={`h-full w-full grid place-items-center text-sm font-bold ${isLightTheme ? 'text-slate-700' : 'text-white/75'}`}>
+                                                {userName.slice(0, 1).toUpperCase()}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className={`mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.32em] ${metaTextClass}`}>
+                                            <span>{tagText}</span>
+                                            <span style={lineStyle} className="h-px flex-1"></span>
+                                        </div>
+                                        <div className={`text-[15px] font-semibold leading-6 break-words whitespace-normal ${bodyTextClass}`}>
+                                            {bannerText}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const hexToRgba = (hex: string, alpha: number): string => {
     if (!hex) return `rgba(0, 0, 0, ${alpha})`;
@@ -263,7 +484,8 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
     const [accepting, setAccepting] = useState<boolean>(true);
     const [playing, setPlaying] = useState<boolean>(true);
 
-    const [rejects, setRejects] = useState<any[]>([]);
+    const [successes, setSuccesses] = useState<OverlayNotice[]>([]);
+    const [rejects, setRejects] = useState<OverlayNotice[]>([]);
     const [, setPrevQueue] = useState<SongInfo[]>([]);
     const [newItemsIds, setNewItemsIds] = useState<Set<string>>(new Set());
 
@@ -398,6 +620,7 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                     triggerToast(json.toast.msg);
                 }
 
+                setSuccesses(json.successes || []);
                 setRejects(json.rejects || []);
 
                 const safeQueue: SongInfo[] = Array.isArray(json.queue) ? json.queue : [];
@@ -782,7 +1005,7 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                             >
                                 <span className="text-[10px] leading-none">{playing ? '🟢' : '🔴'}</span>
                             </button>
-                            <h1 className="font-bold text-[15px] tracking-wide pointer-events-none whitespace-nowrap shrink-0" style={{ color: theme.titleColor }}>嗷呜点歌机</h1>
+                            <h1 className="font-bold text-[15px] tracking-wide pointer-events-none whitespace-nowrap shrink-0" style={{ color: theme.titleColor }}>易点椿曲</h1>
                         </div>
 
                         <div className="flex items-center relative h-6 flex-1 justify-end min-w-0">
@@ -899,6 +1122,19 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                                 <span className="text-xs font-bold text-red-400 tracking-wide relative z-10">已暂停接收新点歌</span>
                             </div>
                         )}
+
+                        {successes.map((notice) => (
+                            <div key={notice.id} className="animate-slide-in glass-card rounded-lg p-2 flex items-center gap-3 border border-emerald-400/30 bg-emerald-500/10 mb-1 relative overflow-hidden shrink-0">
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-400/10 to-transparent -translate-x-full animate-[shimmer_2s_infinite]"></div>
+                                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-emerald-400/50 shadow-[0_0_8px_rgba(52,211,153,0.35)]">
+                                    <img src={notice.user.avatar} className="w-full h-full object-cover" />
+                                </div>
+                                <div className="flex flex-col min-w-0 z-10">
+                                    <div className="text-[12px] font-bold text-emerald-300 truncate drop-shadow-md flex items-center gap-1.5"><span>✅</span> <span>{notice.title || `${notice.user.name || notice.user.uname || '观众'} 点歌成功`}</span></div>
+                                    <div className="text-[10px] text-white/85 truncate mt-0.5">{notice.detail || '已成功处理点歌请求'}</div>
+                                </div>
+                            </div>
+                        ))}
 
                         {rejects.map((rej) => (
                             <div key={rej.id} className="animate-slide-in glass-card rounded-lg p-2 flex items-center gap-3 border border-red-500/30 bg-red-500/10 mb-1 relative overflow-hidden shrink-0">
@@ -1058,6 +1294,7 @@ const AdminWidget: React.FC = () => {
     const [hasBiliLoopIssue, setHasBiliLoopIssue] = useState<boolean>(false);
 
     const [superUserInput, setSuperUserInput] = useState<string>('');
+    const [requestWhitelistInput, setRequestWhitelistInput] = useState<string>('');
     const [debugInput, setDebugInput] = useState<string>('');
 
     const [adminToast, setAdminToast] = useState<string>('');
@@ -1084,7 +1321,7 @@ const AdminWidget: React.FC = () => {
     const [feedbackResult, setFeedbackResult] = useState<any>(null);
     const [overlayMods, setOverlayMods] = useState<OverlayModState | null>(null);
     const [overlayUrl, setOverlayUrl] = useState(
-        'https://github.com/Enkianssus/AwooMusicBot-Overlay-Default'
+        'https://github.com/Enkianssus/HaruMusicBot-Overlay-Default'
     );
     const [overlayBusy, setOverlayBusy] = useState(false);
     const [overlayDropActive, setOverlayDropActive] = useState(false);
@@ -1336,6 +1573,34 @@ const AdminWidget: React.FC = () => {
 
     const isInitialConfigLoad = useRef(true);
     const lastConfigString = useRef('');
+
+    const persistSysConfigNow = useCallback((nextSysConfig: any) => {
+        lastConfigString.current = JSON.stringify(nextSysConfig);
+        setConfig((previous: any) => previous ? ({
+            ...previous,
+            config: nextSysConfig
+        }) : previous);
+
+        fetch('http://localhost:5555/api/config', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ sysConfig: nextSysConfig })
+        }).then(async res => {
+            if (!res.ok) throw new Error('保存配置失败');
+            const json = await res.json().catch(() => null);
+            if (json?.config) {
+                lastConfigString.current = JSON.stringify(json.config);
+                setConfig((previous: any) => previous ? ({
+                    ...previous,
+                    ...json,
+                    config: json.config
+                }) : previous);
+            }
+            showAdminToast("✅ 基础设置已保存！");
+        }).catch(() => {
+            showAdminToast("❌ 基础设置保存失败，请检查后端是否运行。");
+        });
+    }, [showAdminToast]);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -1914,17 +2179,50 @@ const AdminWidget: React.FC = () => {
         }));
     };
 
+    const normalizeBiliUid = (value: string | number) => String(value).trim();
+    const isBiliUid = (value: string) => /^\d+$/.test(value);
+
     const addSuperUser = () => {
-        if(!superUserInput.trim()) return;
+        const userUid = normalizeBiliUid(superUserInput);
+        if(!userUid || !isBiliUid(userUid)) {
+            setSuperUserInput('');
+            return;
+        }
         const currentSu = config.config.SuperUsers || [];
-        if(currentSu.includes(superUserInput.trim())) { setSuperUserInput(''); return; }
-        setConfig((prev: any) => ({...prev, config: {...prev.config, SuperUsers: [...currentSu, superUserInput.trim()]}}));
+        if(currentSu.some((uid: string | number) => normalizeBiliUid(uid) === userUid)) { setSuperUserInput(''); return; }
+        persistSysConfigNow({ ...config.config, SuperUsers: [...currentSu, userUid] });
         setSuperUserInput('');
     };
 
-    const removeSuperUser = (name: string) => {
-        const currentSu: string[] = config.config.SuperUsers || [];
-        setConfig((prev: any) => ({...prev, config: {...prev.config, SuperUsers: currentSu.filter(n => n !== name)}}));
+    const removeSuperUser = (userUid: string | number) => {
+        const currentSu: Array<string | number> = config.config.SuperUsers || [];
+        persistSysConfigNow({
+            ...config.config,
+            SuperUsers: currentSu.filter(uid => normalizeBiliUid(uid) !== normalizeBiliUid(userUid))
+        });
+    };
+
+    const addRequestWhitelistUser = () => {
+        const userUid = normalizeBiliUid(requestWhitelistInput);
+        if(!userUid || !isBiliUid(userUid)) {
+            setRequestWhitelistInput('');
+            return;
+        }
+        const currentUsers = config.config.RequestWhitelistUsers || [];
+        if(currentUsers.some((uid: string | number) => normalizeBiliUid(uid) === userUid)) {
+            setRequestWhitelistInput('');
+            return;
+        }
+        persistSysConfigNow({ ...config.config, RequestWhitelistUsers: [...currentUsers, userUid] });
+        setRequestWhitelistInput('');
+    };
+
+    const removeRequestWhitelistUser = (userUid: string | number) => {
+        const currentUsers: Array<string | number> = config.config.RequestWhitelistUsers || [];
+        persistSysConfigNow({
+            ...config.config,
+            RequestWhitelistUsers: currentUsers.filter(uid => normalizeBiliUid(uid) !== normalizeBiliUid(userUid))
+        });
     };
 
     const handleSetPlayerType = async (type: string) => {
@@ -1993,6 +2291,7 @@ const AdminWidget: React.FC = () => {
         { type: 'Folia', name: 'Folia', method: '独立 Stage 连接器', detail: 'HTTP + WebSocket；支持 ID 校验与封面', connectorId: 'folia' }
     ];
     const classicObsUrl = 'http://localhost:5555/';
+    const successBannerUrl = 'http://127.0.0.1:5555/?view=success-banner';
     const externalApiPort = Number(
         config?.externalApi?.port || config?.config?.ExternalApiPort || 5556
     );
@@ -2122,6 +2421,20 @@ const AdminWidget: React.FC = () => {
                                             </div>
                                         </div>
 
+                                        <div className="bg-emerald-500/5 p-4 rounded-xl border border-emerald-500/25 shadow-inner mb-5">
+                                            <div className="flex items-center justify-between gap-3 mb-2">
+                                                <span className="text-sm font-bold text-emerald-300">点歌成功通知条</span>
+                                                <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300">透明浏览器源</span>
+                                            </div>
+                                            <div className="text-xs text-gray-400 mb-3 leading-relaxed">
+                                                默认完全透明。只有收到新的点歌成功事件时，才会从顶部滑出一条类似手机通知的提示，适合放在手机状装饰框顶部。
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1 min-w-0 text-sm font-mono text-emerald-300 select-all truncate">{successBannerUrl}</div>
+                                                <button onClick={() => { void navigator.clipboard.writeText(successBannerUrl); showAdminToast('✅ 已复制点歌成功通知条地址'); }} className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg text-xs font-bold text-emerald-300 border border-emerald-500/25">复制</button>
+                                            </div>
+                                        </div>
+
                                         <div className={`p-4 rounded-xl border mb-5 flex items-center gap-4 ${currentStatusSong && !config.currentIsRequested ? 'bg-sky-500/10 border-sky-400/25' : 'bg-white/5 border-white/10'}`}>
                                             <div className={`w-12 h-12 shrink-0 rounded-xl overflow-hidden grid place-items-center ${currentStatusSong && !config.currentIsRequested ? 'bg-sky-400/15 text-sky-200' : 'bg-white/5 text-gray-400'}`}>
                                                 {currentStatusSong?.CoverUrl ? (
@@ -2192,7 +2505,7 @@ const AdminWidget: React.FC = () => {
                                                     </div>
                                                     <p className="text-xs text-gray-400 mt-1 leading-relaxed">支持 GitHub 仓库发布清单，也支持选择或拖入本地 ZIP。包会经过路径、体积和文件类型校验。</p>
                                                 </div>
-                                                <a href="https://github.com/Enkianssus/AwooMusicBot-Overlay-Default" target="_blank" rel="noreferrer" className="text-xs text-cyan-300 hover:text-cyan-200 underline shrink-0">开发示例</a>
+                                                <a href="https://github.com/Enkianssus/HaruMusicBot-Overlay-Default" target="_blank" rel="noreferrer" className="text-xs text-cyan-300 hover:text-cyan-200 underline shrink-0">开发示例</a>
                                             </div>
 
                                             <div className="p-5 space-y-4">
@@ -2734,6 +3047,15 @@ const AdminWidget: React.FC = () => {
                                                 <input type="number" className="w-full bg-red-900/30 border border-red-500/30 rounded-lg p-2.5 text-md text-red-200 focus:border-red-500 outline-none" value={config.config.Cooldowns?.Governor || 0} onChange={e => updateCooldown('Governor', e.target.value)} />
                                             </div>
                                         </div>
+                                        <div className="flex justify-between items-center gap-4 bg-black/30 border border-white/10 rounded-lg p-3">
+                                            <div>
+                                                <label className="block text-sm text-white font-medium">白名单用户无视点歌冷却</label>
+                                                <span className="text-xs text-gray-500 block mt-1">开启后，下方 UID 白名单用户不会被本冷却规则限制</span>
+                                            </div>
+                                            <button onClick={() => persistSysConfigNow({...config.config, CooldownWhitelistExempt: !config.config.CooldownWhitelistExempt})} className={`w-10 h-6 rounded-full p-1 transition-colors shrink-0 ${config.config.CooldownWhitelistExempt ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${config.config.CooldownWhitelistExempt ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6">
@@ -2786,16 +3108,81 @@ const AdminWidget: React.FC = () => {
                                                 <span className="text-xs text-gray-500 block mt-1.5">主播歌单始终显示歌曲封面</span>
                                             </div>
 
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-2">顶部通知停留时长</label>
+                                                <input
+                                                    type="number"
+                                                    min="1000"
+                                                    max="15000"
+                                                    step="100"
+                                                    value={config.config.OverlayNoticeDurationMs ?? 5000}
+                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeDurationMs: parseInt(e.target.value, 10) || 5000}})}
+                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
+                                                />
+                                                <span className="text-xs text-gray-500 block mt-1.5">单位毫秒，应用于顶部成功/失败通知条；建议 3000 到 7000。</span>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-2">顶部通知条宽度</label>
+                                                <input
+                                                    type="number"
+                                                    min="280"
+                                                    max="1200"
+                                                    step="10"
+                                                    value={config.config.OverlayNoticeWidthPx ?? 720}
+                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeWidthPx: parseInt(e.target.value, 10) || 720}})}
+                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
+                                                />
+                                                <span className="text-xs text-gray-500 block mt-1.5">单位像素，控制顶部通知条的最大宽度；建议 360 到 760。</span>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-2">顶部通知条主题</label>
+                                                <select
+                                                    value={config.config.OverlayNoticeTheme === 'light' ? 'light' : 'dark'}
+                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeTheme: e.target.value === 'light' ? 'light' : 'dark'}})}
+                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none cursor-pointer"
+                                                >
+                                                    <option value="dark">深色主题</option>
+                                                    <option value="light">浅色主题</option>
+                                                </select>
+                                                <span className="text-xs text-gray-500 block mt-1.5">影响顶部成功/失败通知条的底色、边框和文字亮度。</span>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-2">顶部通知条透明度</label>
+                                                <input
+                                                    type="number"
+                                                    min="0.35"
+                                                    max="1"
+                                                    step="0.05"
+                                                    value={config.config.OverlayNoticeOpacity ?? 0.94}
+                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeOpacity: parseFloat(e.target.value) || 0.94}})}
+                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
+                                                />
+                                                <span className="text-xs text-gray-500 block mt-1.5">范围 0.35 到 1。数值越小越通透，越大越接近不透明。</span>
+                                            </div>
+
                                             <div className="flex flex-col justify-center pt-3">
                                                 <div className="flex justify-between items-center gap-4 bg-black/30 border border-white/10 rounded-lg p-3">
                                                     <div>
                                                         <label className="block text-sm text-white font-medium">同一用户只能同时点一首</label>
                                                         <span className="text-xs text-gray-500 block mt-1">开启后，用户上一首仍在队列中或正在播放时，新点歌会被拒绝</span>
                                                     </div>
-                                                    <button onClick={() => setConfig({...config, config: {...config.config, SinglePendingRequestPerUser: !config.config.SinglePendingRequestPerUser}})} className={`w-10 h-6 rounded-full p-1 transition-colors shrink-0 ${config.config.SinglePendingRequestPerUser ? 'bg-blue-600' : 'bg-gray-600'}`}>
+                                                    <button onClick={() => persistSysConfigNow({...config.config, SinglePendingRequestPerUser: !config.config.SinglePendingRequestPerUser})} className={`w-10 h-6 rounded-full p-1 transition-colors shrink-0 ${config.config.SinglePendingRequestPerUser ? 'bg-blue-600' : 'bg-gray-600'}`}>
                                                         <div className={`w-4 h-4 rounded-full bg-white transition-transform ${config.config.SinglePendingRequestPerUser ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                     </button>
                                                 </div>
+                                                <label className={`flex items-center gap-2 mt-2 text-xs ${config.config.SinglePendingRequestPerUser ? 'text-gray-400' : 'text-gray-600'}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        disabled={!config.config.SinglePendingRequestPerUser}
+                                                        checked={config.config.SinglePendingRequestWhitelistExempt === true}
+                                                        onChange={e => persistSysConfigNow({...config.config, SinglePendingRequestWhitelistExempt: e.target.checked})}
+                                                        className="w-4 h-4"
+                                                    />
+                                                    白名单用户不受此限制
+                                                </label>
                                             </div>
 
                                             <div className="flex flex-col justify-center pt-3">
@@ -2869,18 +3256,19 @@ const AdminWidget: React.FC = () => {
 
                                     <div className={`bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6 relative ${!config.biliLogin ? 'opacity-50' : ''}`}>
                                         <h3 className="text-sm font-bold text-yellow-400 uppercase tracking-widest border-b border-white/10 pb-3">👑 超级用户白名单</h3>
-                                        <p className="text-sm text-gray-500">在下方名单中的 B站用户名，将完全无视冷却时间和任何点歌、切歌权限限制。</p>
+                                        <p className="text-sm text-gray-500">主播本人会自动拥有最高权限；这里的旧超级用户仍会完全无视冷却时间和任何点歌、切歌权限限制。</p>
                                         {!config.biliLogin && <div className="text-xs text-yellow-300 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">游客模式下不可用，请先扫码登录。</div>}
 
                                         <div className="flex gap-3">
                                             <input
                                                 disabled={!config.biliLogin}
                                                 type="text"
+                                                inputMode="numeric"
                                                 value={superUserInput}
                                                 onChange={e => setSuperUserInput(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && addSuperUser()}
                                                 className="flex-1 bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none"
-                                                placeholder="输入需要特权的 B站完整用户名..."
+                                                placeholder="输入需要特权的 B站 UID..."
                                             />
                                             <button disabled={!config.biliLogin} onClick={addSuperUser} className="px-6 py-2.5 bg-yellow-600 hover:bg-yellow-500 text-white text-md rounded-lg font-bold transition-colors disabled:cursor-not-allowed">添加</button>
                                         </div>
@@ -2889,13 +3277,45 @@ const AdminWidget: React.FC = () => {
                                             {!(config.config.SuperUsers?.length > 0) ? (
                                                 <span className="text-sm text-gray-600 italic">暂无超级用户</span>
                                             ) : (
-                                                config.config.SuperUsers.map((su: string) => (
-                                                    <div key={su} className="bg-white/10 border border-white/20 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
-                                                        <span>{su}</span>
+                                                config.config.SuperUsers.map((su: string | number) => (
+                                                    <div key={String(su)} className="bg-white/10 border border-white/20 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
+                                                        <span className="font-mono">{String(su)}</span>
                                                         <button disabled={!config.biliLogin} onClick={() => removeSuperUser(su)} className="text-red-400 hover:text-red-300 font-bold ml-1 disabled:cursor-not-allowed">✕</button>
                                                     </div>
                                                 ))
                                             )}
+                                        </div>
+
+                                        <div className="border-t border-white/10 pt-5 space-y-4">
+                                            <div>
+                                                <h4 className="text-sm font-bold text-cyan-300">规则白名单 UID</h4>
+                                                <p className="text-xs text-gray-500 mt-1">这里配置 B站 UID；是否豁免由每条点歌规则自己的开关决定。</p>
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <input
+                                                    disabled={!config.biliLogin}
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={requestWhitelistInput}
+                                                    onChange={e => setRequestWhitelistInput(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && addRequestWhitelistUser()}
+                                                    className="flex-1 bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-cyan-500 outline-none"
+                                                    placeholder="输入 B站 UID..."
+                                                />
+                                                <button disabled={!config.biliLogin} onClick={addRequestWhitelistUser} className="px-6 py-2.5 bg-cyan-700 hover:bg-cyan-600 text-white text-md rounded-lg font-bold transition-colors disabled:cursor-not-allowed">添加</button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-3">
+                                                {!(config.config.RequestWhitelistUsers?.length > 0) ? (
+                                                    <span className="text-sm text-gray-600 italic">暂无规则白名单用户</span>
+                                                ) : (
+                                                    config.config.RequestWhitelistUsers.map((uid: string | number) => (
+                                                        <div key={String(uid)} className="bg-cyan-500/10 border border-cyan-400/20 text-cyan-100 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
+                                                            <span className="font-mono">{String(uid)}</span>
+                                                            <button disabled={!config.biliLogin} onClick={() => removeRequestWhitelistUser(uid)} className="text-red-400 hover:text-red-300 font-bold ml-1 disabled:cursor-not-allowed">✕</button>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -2915,6 +3335,13 @@ const AdminWidget: React.FC = () => {
                                                             <span className="text-sm text-gray-300">允许房管无视限制</span>
                                                             <button disabled={!config.biliLogin} onClick={() => updatePermission(pt.key, 'AllowManager', !pData.AllowManager)} className={`w-10 h-6 rounded-full p-1 transition-colors disabled:cursor-not-allowed ${pData.AllowManager ? 'bg-green-600' : 'bg-gray-600'}`}>
                                                                 <div className={`w-4 h-4 rounded-full bg-white transition-transform ${pData.AllowManager ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-sm text-gray-300">允许规则白名单无视限制</span>
+                                                            <button disabled={!config.biliLogin} onClick={() => persistSysConfigNow({...config.config, [pt.key]: {...pData, AllowWhitelist: !pData.AllowWhitelist}})} className={`w-10 h-6 rounded-full p-1 transition-colors disabled:cursor-not-allowed ${pData.AllowWhitelist ? 'bg-cyan-600' : 'bg-gray-600'}`}>
+                                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${pData.AllowWhitelist ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                             </button>
                                                         </div>
 
@@ -3135,6 +3562,7 @@ const AdminWidget: React.FC = () => {
 const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const isAdmin = params.get('admin') === 'true';
+    const view = params.get('view');
 
     if (isAdmin) {
         return (
@@ -3143,6 +3571,15 @@ const App: React.FC = () => {
                 <div style={{ background: '#0d1117', minHeight: '100vh' }}>
                     <AdminWidget />
                 </div>
+            </>
+        );
+    }
+
+    if (view === 'success-banner') {
+        return (
+            <>
+                <GlobalStyles />
+                <SuccessBannerOverlay />
             </>
         );
     }

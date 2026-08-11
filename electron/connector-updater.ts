@@ -390,7 +390,7 @@ export class ConnectorUpdater {
         success: false,
         updated: false,
         message:
-          `连接器 ${status.latestVersion} 要求嗷呜点歌机 `
+          `连接器 ${status.latestVersion} 要求易点椿曲 `
           + `${status.minimumCoreVersion} 或更高版本`,
         status
       };

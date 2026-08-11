@@ -1,19 +1,19 @@
-# 嗷呜点歌机
+# HaruMusicBot
 
 <p align="center">
-  <img src="docs/images/awoo-musicbot-1.1.5.png" alt="嗷呜点歌机控制面板与 OBS 展示页面" width="100%">
+  <img src="docs/images/haru-musicbot-1.1.6.png" alt="易点椿曲控制面板与 OBS 展示页面" width="100%">
 </p>
 
-嗷呜点歌机是一款面向 Bilibili 主播的 Windows 弹幕点歌工具。1.1.5
+易点椿曲基于“嗷呜点歌机”，是一款面向 Bilibili 主播的 Windows 弹幕点歌工具。1.1.5
 开始支持网易云音乐、酷狗音乐、QQ 音乐和 Folia，并把各播放器的搜索、
 状态读取和控制实现拆成可独立更新的连接器。
 
-项目仓库和底层包标识使用英文名 `AwooMusicBot` / `awoo-musicbot`，安装后的
-程序、窗口、快捷方式及其它面向用户的名称均为“嗷呜点歌机”。
+项目仓库和底层包标识使用英文名 `HaruMusicBot` / `haru-musicbot`，安装后的
+程序、窗口、快捷方式及其它面向用户的名称均为“易点椿曲”。
 
 ## 发布通道
 
-- **嗷呜点歌机 1.1.x**：推荐的新架构。支持四种播放器、游客模式、
+- **易点椿曲 1.1.x**：推荐的新架构。支持四种播放器、游客模式、
   独立连接器、HTTP/WebSocket 只读接口和内置问题反馈；功能更多、体验
   更好，但仍可能遇到播放器私有协议变化带来的兼容性或稳定性问题。
 - **BiliNCM 1.0.x**：旧稳定通道。功能较少，主要面向原有网易云流程，
@@ -112,7 +112,7 @@
 OBS 始终使用同一个 `/overlay/` 地址，安装或切换 UI 后不需要修改浏览器源。
 第三方 UI 的清单、ZIP 结构和安全限制见
 [`docs/overlay-mods.md`](docs/overlay-mods.md)。官方示例仓库为
-[`Enkianssus/AwooMusicBot-Overlay-Default`](https://github.com/Enkianssus/AwooMusicBot-Overlay-Default)。
+[`Enkianssus/HaruMusicBot-Overlay-Default`](https://github.com/Enkianssus/HaruMusicBot-Overlay-Default)。
 
 ## 本地开发
 

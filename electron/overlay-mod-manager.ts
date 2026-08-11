@@ -5,7 +5,7 @@ import extract from 'extract-zip';
 
 export const OVERLAY_PACKAGE_SCHEMA_VERSION = 1;
 export const OFFICIAL_OVERLAY_REPOSITORY =
-  'https://github.com/Enkianssus/AwooMusicBot-Overlay-Default';
+  'https://github.com/Enkianssus/HaruMusicBot-Overlay-Default';
 export const OFFICIAL_OVERLAY_DESCRIPTOR_PROXY =
   'https://app.enkianss.us/mods/v1/official/manifest.json';
 export const MAX_OVERLAY_ARCHIVE_BYTES = 20 * 1024 * 1024;
@@ -156,7 +156,7 @@ export function validateOverlayManifest(
     throw new Error('Mod UI 的 minAppVersion 无效');
   }
   if (compareVersions(currentAppVersion, minAppVersion) < 0) {
-    throw new Error(`此 Mod UI 需要嗷呜点歌机 ${minAppVersion} 或更高版本`);
+    throw new Error(`此 Mod UI 需要易点椿曲 ${minAppVersion} 或更高版本`);
   }
   if (!isSafeRelativePath(entry) || !/\.html?$/i.test(entry)) {
     throw new Error('Mod UI 入口必须是包内的 HTML 文件');
@@ -242,7 +242,7 @@ export function resolveOverlayDescriptorUrl(input: string): string {
   );
   if (githubMatch) {
     const repository = `${githubMatch[1]}/${githubMatch[2]}`;
-    if (repository.toLowerCase() === 'enkianssus/awoomusicbot-overlay-default') {
+    if (repository.toLowerCase() === 'enkianssus/harumusicbot-overlay-default') {
       return OFFICIAL_OVERLAY_DESCRIPTOR_PROXY;
     }
     return `https://github.com/${repository}/releases/latest/download/awoo-overlay.json`;
@@ -351,7 +351,7 @@ export class OverlayModManager {
       cache: 'no-store',
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'AwooMusicBot-OverlayInstaller/1.0'
+        'User-Agent': 'HaruMusicBot-OverlayInstaller/1.0'
       }
     });
     if (!descriptorResponse.ok) {
@@ -369,7 +369,7 @@ export class OverlayModManager {
       cache: 'no-store',
       headers: {
         Accept: 'application/zip, application/octet-stream',
-        'User-Agent': 'AwooMusicBot-OverlayInstaller/1.0'
+        'User-Agent': 'HaruMusicBot-OverlayInstaller/1.0'
       }
     });
     if (!packageResponse.ok) {
