@@ -4,10 +4,13 @@ import {
   planImmediatePlaybackCommand,
   planObservedNextAction,
   planQueueHeadMutation,
+  getNextGuardMode,
+  isLikelyManualTrackSelection,
   queueSongIdentity,
   shouldDeferManagedTrackObservation,
   shouldPreserveQueueDuringManagedReplay,
   shouldPreserveGuardAfterImmediate,
+  shouldPreserveExternalTrackSelection,
   shouldRepairObservedNext,
   tracksHaveDifferentStableIds,
   tracksRepresentSameSong
@@ -293,6 +296,93 @@ test('managed replay never consumes a duplicate queued request for the same song
     playingRequest,
     duplicateQueuedRequest
   ), false);
+});
+
+test('selecting a track other than the previously reported native next is manual', () => {
+  assert.equal(isLikelyManualTrackSelection({
+    observed: { id: 'manual', title: 'Manual Song' },
+    previousNativeNext: { id: 'natural', title: 'Natural Next' },
+    previousNextObservation: 'track'
+  }), true);
+});
+
+test('advancing into the previously reported native next is natural', () => {
+  assert.equal(isLikelyManualTrackSelection({
+    observed: { id: 'natural', title: 'Natural Next' },
+    previousNativeNext: { id: 'natural', title: 'Natural Next' },
+    previousNextObservation: 'track'
+  }), false);
+});
+
+test('a new track after a confirmed empty next is treated as manual', () => {
+  assert.equal(isLikelyManualTrackSelection({
+    observed: { id: 'manual', title: 'Manual Song' },
+    previousNativeNext: null,
+    previousNextObservation: 'empty'
+  }), true);
+});
+
+test('unknown legacy next state keeps the conservative fallback behavior', () => {
+  assert.equal(isLikelyManualTrackSelection({
+    observed: { id: 'new', title: 'New Song' },
+    previousNativeNext: null,
+    previousNextObservation: 'unknown'
+  }), false);
+});
+
+test('NetEase preserves an off-queue player selection even without next metadata', () => {
+  assert.equal(shouldPreserveExternalTrackSelection({
+    playerKey: 'netease',
+    managedActionActive: false,
+    observed: { id: 'manual', title: 'Manual Song' },
+    currentRequest: { Id: 'request-current', SongName: 'Request Current' },
+    queueHead: { Id: 'request-next', SongName: 'Request Next' },
+    likelyManualSelection: false,
+    previousNextObservation: 'unknown'
+  }), true);
+});
+
+test('NetEase natural transition to its previously observed next is not preserved', () => {
+  assert.equal(shouldPreserveExternalTrackSelection({
+    playerKey: 'netease',
+    managedActionActive: false,
+    observed: { id: 'native-next', title: 'Native Next' },
+    currentRequest: { Id: 'request-current', SongName: 'Request Current' },
+    queueHead: { Id: 'request-next', SongName: 'Request Next' },
+    likelyManualSelection: false,
+    previousNextObservation: 'track'
+  }), false);
+});
+
+test('NetEase still advances normally when the observed song is the queue head', () => {
+  const queueHead = { Id: 'request-next', SongName: 'Request Next' };
+  assert.equal(shouldPreserveExternalTrackSelection({
+    playerKey: 'netease',
+    managedActionActive: false,
+    observed: { id: 'request-next', title: 'Request Next' },
+    currentRequest: { Id: 'request-current', SongName: 'Request Current' },
+    queueHead,
+    likelyManualSelection: false,
+    previousNextObservation: 'track'
+  }), false);
+});
+
+test('managed player actions are never reclassified as external selections', () => {
+  assert.equal(shouldPreserveExternalTrackSelection({
+    playerKey: 'netease',
+    managedActionActive: true,
+    observed: { id: 'intermediate', title: 'Intermediate' },
+    currentRequest: null,
+    queueHead: { Id: 'request-next', SongName: 'Request Next' },
+    likelyManualSelection: true,
+    previousNextObservation: 'track'
+  }), false);
+});
+
+test('NetEase uses passive queue guarding so player-side selections stay observable', () => {
+  assert.equal(getNextGuardMode('netease'), 'passive');
+  assert.equal(getNextGuardMode('kugou'), 'active');
+  assert.equal(getNextGuardMode('qqmusic'), 'active');
 });
 
 test('QQ interrupt always preserves the displaced current song as guard', () => {

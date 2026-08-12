@@ -2,6 +2,14 @@ export interface RequestedSongLike {
   OrderedByUid?: string | number | null;
 }
 
+export const REQUEST_INTAKE_PAUSED_REASON = '当前已暂停接收新点歌';
+
+export function getRequestIntakeRejection(
+  acceptingRequests: boolean
+): string | null {
+  return acceptingRequests ? null : REQUEST_INTAKE_PAUSED_REASON;
+}
+
 export function sameUser(
   left: string | number | null | undefined,
   right: string | number | null | undefined

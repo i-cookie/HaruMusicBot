@@ -64,3 +64,9 @@ export function getBasicSongRequestKeyword(message: string): string | null {
   if (!normalized.startsWith('点歌') && !normalized.startsWith('點歌')) return null;
   return normalized.substring(2).trim() || null;
 }
+
+export function getSongQueryKeyword(message: string): string | null {
+  const normalized = String(message || '').trim();
+  if (!normalized.startsWith('查询') && !normalized.startsWith('查詢')) return null;
+  return normalized.substring(2).trim() || null;
+}

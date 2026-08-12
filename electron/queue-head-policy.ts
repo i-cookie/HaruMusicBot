@@ -22,6 +22,8 @@ export type NextObservation =
 
 export type ObservedNextAction = 'none' | 'arm-only' | 'insert';
 
+export type NextGuardMode = 'active' | 'passive';
+
 export type ImmediatePlaybackMode = 'play-now' | 'interrupt';
 
 export type ImmediatePlaybackCommand =
@@ -201,6 +203,68 @@ export function shouldDeferManagedTrackObservation(
   return Boolean(target)
     && Boolean(observed)
     && !tracksRepresentSameSong(target, observed);
+}
+
+/**
+ * A transition to something other than the player's previously reported next
+ * track is most likely an explicit selection made in the player UI. Unknown
+ * legacy observations stay conservative so older connectors retain their
+ * existing queue-repair behavior.
+ */
+export function isLikelyManualTrackSelection(options: {
+  observed: QueueSongLike | null | undefined;
+  previousNativeNext: QueueSongLike | null | undefined;
+  previousNextObservation: NextObservation | null | undefined;
+}): boolean {
+  if (!options.observed) return false;
+  if (options.previousNativeNext) {
+    return !tracksRepresentSameSong(
+      options.previousNativeNext,
+      options.observed
+    );
+  }
+  return options.previousNextObservation === 'empty'
+    || options.previousNextObservation === 'track';
+}
+
+export function shouldPreserveExternalTrackSelection(options: {
+  playerKey: string;
+  managedActionActive: boolean;
+  observed: QueueSongLike | null | undefined;
+  currentRequest: QueueSongLike | null | undefined;
+  queueHead: QueueSongLike | null | undefined;
+  likelyManualSelection: boolean;
+  previousNextObservation: NextObservation | null | undefined;
+}): boolean {
+  if (options.managedActionActive || !options.observed) return false;
+  if (
+    tracksRepresentSameSong(options.currentRequest, options.observed)
+    || tracksRepresentSameSong(options.queueHead, options.observed)
+  ) {
+    return false;
+  }
+
+  if (options.likelyManualSelection) return true;
+
+  // NetEase does not consistently expose its native next item. When that
+  // observation was unavailable, an off-queue transition cannot safely be
+  // classified as natural, so prefer preserving the player-side selection.
+  return options.playerKey === 'netease'
+    && (
+      !options.previousNextObservation
+      || options.previousNextObservation === 'legacy'
+      || options.previousNextObservation === 'unknown'
+    );
+}
+
+/**
+ * NetEase's connector-side guard pauses every unexpected transition before
+ * the main process can classify it. That includes explicit selections made in
+ * the NetEase UI. Keep only a passive local registration for NetEase and let
+ * the observed transition decide whether the request head should take over.
+ */
+export function getNextGuardMode(playerKey: string): NextGuardMode {
+  return playerKey === 'netease' ? 'passive' : 'active';
 }
 
 export function shouldPreserveQueueDuringManagedReplay(

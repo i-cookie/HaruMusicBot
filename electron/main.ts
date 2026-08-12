@@ -11,11 +11,14 @@ import { createRequire } from 'module';
 import { WebSocket, WebSocketServer } from 'ws';
 import QRCode from 'qrcode';
 import {
+  isLikelyManualTrackSelection,
   planImmediatePlaybackCommand,
   planObservedNextAction,
   planQueueHeadMutation,
+  getNextGuardMode,
   queueSongIdentity,
   shouldDeferManagedTrackObservation,
+  shouldPreserveExternalTrackSelection,
   shouldPreserveQueueDuringManagedReplay,
   shouldPreserveGuardAfterImmediate,
   tracksRepresentSameSong
@@ -29,14 +32,17 @@ import {
 } from './local-test-api-policy';
 import type { LocalSongRequestMode } from './local-test-api-policy';
 import {
+  getRequestIntakeRejection,
   hasPendingSongRequestByUser,
   normalizeUserIdList,
   userIdInList
 } from './song-request-policy';
 import {
   getBasicSongRequestKeyword,
+  getSongQueryKeyword,
   parseSuperChatCommand
 } from './super-chat-policy';
+import { findUserSongQueryResult } from './song-query-policy';
 import {
   appendToNormalQueue,
   appendToPriorityQueue,
@@ -319,6 +325,7 @@ let appConfig: any = {
     OverlayNoticeOpacity: 0.94,
     OverlayNoticeSuccessColor: '#10b981',
     OverlayNoticeFailureColor: '#f43f5e',
+    OverlayNoticeQueryColor: '#38bdf8',
     ExternalHttpEnabled: false,
     ExternalWebSocketEnabled: false,
     ExternalApiPort: 5556
@@ -332,7 +339,7 @@ function loadConfig() {
       appConfig = { ...appConfig, ...saved };
 
       if (!appConfig.sysConfig) {
-        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, SinglePendingRequestPerUser: false, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], RequestWhitelistUsers: [], CooldownWhitelistExempt: false, SinglePendingRequestWhitelistExempt: false, SuperChatCooldownExempt: false, SuperChatSinglePendingExempt: false, OverlayNoticeDurationMs: 5000, OverlayNoticeWidthPx: 720, OverlayNoticeTheme: 'dark', OverlayNoticeOpacity: 0.94, OverlayNoticeSuccessColor: '#10b981', OverlayNoticeFailureColor: '#f43f5e', ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
+        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, SinglePendingRequestPerUser: false, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], RequestWhitelistUsers: [], CooldownWhitelistExempt: false, SinglePendingRequestWhitelistExempt: false, SuperChatCooldownExempt: false, SuperChatSinglePendingExempt: false, OverlayNoticeDurationMs: 5000, OverlayNoticeWidthPx: 720, OverlayNoticeTheme: 'dark', OverlayNoticeOpacity: 0.94, OverlayNoticeSuccessColor: '#10b981', OverlayNoticeFailureColor: '#f43f5e', OverlayNoticeQueryColor: '#38bdf8', ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
       }
       if (!['NCM', 'Kugou', 'QQMusic', 'Folia'].includes(appConfig.sysConfig.PlayerType)) appConfig.sysConfig.PlayerType = 'NCM';
       if (appConfig.sysConfig.FoliaToken === undefined) appConfig.sysConfig.FoliaToken = '';
@@ -372,6 +379,10 @@ function loadConfig() {
       appConfig.sysConfig.OverlayNoticeFailureColor = normalizeOverlayNoticeColor(
         appConfig.sysConfig.OverlayNoticeFailureColor,
         '#f43f5e'
+      );
+      appConfig.sysConfig.OverlayNoticeQueryColor = normalizeOverlayNoticeColor(
+        appConfig.sysConfig.OverlayNoticeQueryColor,
+        '#38bdf8'
       );
       if (appConfig.sysConfig.ExternalHttpEnabled === undefined) appConfig.sysConfig.ExternalHttpEnabled = false;
       if (appConfig.sysConfig.ExternalWebSocketEnabled === undefined) appConfig.sysConfig.ExternalWebSocketEnabled = false;
@@ -433,6 +444,8 @@ let targetQueue: any[] = [];
 let queueEntrySequence = 0;
 let currentPlayingSong: any = null;
 let playerCurrentTrack: any = null;
+let previousObservedNativeNext: any = null;
+let previousNextObservation: NextObservation | null = null;
 let playerPausedAfterRequests = false;
 let playerPlaybackPaused = false;
 let isPausingAfterRequests = false;
@@ -486,6 +499,8 @@ const playerManager = new PlayerManager({
       queueHeadNeedsGuardOnlyAfterCurrentChange = false;
       activeManagedPlayerAction = null;
       cancelledNativeNextSongs.clear();
+      previousObservedNativeNext = null;
+      previousNextObservation = null;
     }
   },
   onTrackChanged: async (track, observation) => {
@@ -510,6 +525,8 @@ const playerManager = new PlayerManager({
     );
   },
   onTrackUpdated: (track, observation) => {
+    previousObservedNativeNext = observation.nextTrack || null;
+    previousNextObservation = observation.nextObservation;
     updatePlayerCurrentTrack(
       String(track.id || `${track.title}|${track.artist}`),
       track.title,
@@ -541,6 +558,15 @@ let recentSuccesses: {
   detail: string,
   songName: string,
   queueAheadCount: number
+}[] = [];
+let recentQueries: {
+  id: number,
+  user: any,
+  title: string,
+  detail: string,
+  songName: string,
+  queueAheadCount: number,
+  found: boolean
 }[] = [];
 
 async function addReject(user: any, reason: string) {
@@ -972,9 +998,9 @@ function handleRawDanmaku(doc: any) {
   if (cmd === 'SUPER_CHAT_MESSAGE') {
     if (appConfig.sysConfig?.ShowAllDanmaku) writeLog(`[RAW原始数据] ${JSON.stringify(doc)}`, 'DarkGray');
     const superChat = parseSuperChatCommand(doc);
-    if (!superChat || !getBasicSongRequestKeyword(superChat.message)) return;
+    if (!superChat || (!getBasicSongRequestKeyword(superChat.message) && !getSongQueryKeyword(superChat.message))) return;
     writeLog(
-      `[SC点歌] ${superChat.user.uname}（￥${superChat.user.superChatPrice}）: ${superChat.message}`,
+      `[SC指令] ${superChat.user.uname}（￥${superChat.user.superChatPrice}）: ${superChat.message}`,
       'Magenta'
     );
     enqueueDanmakuCommand(superChat.user, superChat.message);
@@ -1082,13 +1108,27 @@ function updatePlayerCurrentTrack(trackId: string, songName: string, artistName:
 async function syncTrackChangeLogic(currId: string, currName: string, nextId: string | null, nextName: string, currArtist: string = '', currCoverUrl: string = '', observedNextTrack: any = null, nextObservation: NextObservation = 'legacy'): Promise<void> {
   playerPausedAfterRequests = false;
   updatePlayerCurrentTrack(currId, currName, currArtist, currCoverUrl);
+  const observedCurrentTrack = currId
+    ? { id: currId, title: currName, artist: currArtist }
+    : null;
+  const priorObservedNativeNext = previousObservedNativeNext;
+  const priorNextObservation = previousNextObservation;
+  const likelyManualSelection = isLikelyManualTrackSelection({
+    observed: observedCurrentTrack,
+    previousNativeNext: priorObservedNativeNext,
+    previousNextObservation: priorNextObservation
+  });
+  if (currId) {
+    previousObservedNativeNext = observedNextTrack;
+    previousNextObservation = nextObservation;
+  }
   writeLog(
     `[状态同步] 🎵 播放器切歌信号: ${currName} (${currId}) | `
     + `下一首预告: ${nextName}${nextId ? ` (${nextId})` : ''}`,
     'Magenta'
   );
 
-  const managedAction = activeManagedPlayerAction;
+  let managedAction = activeManagedPlayerAction;
   if (managedAction && Date.now() > managedAction.expiresAt) {
     writeLog(
       `[动作归因] 点歌机动作 #${managedAction.id} 已超时；`
@@ -1096,6 +1136,7 @@ async function syncTrackChangeLogic(currId: string, currName: string, nextId: st
       'Yellow'
     );
     activeManagedPlayerAction = null;
+    managedAction = null;
   } else if (managedAction) {
     const observed = {
       id: currId,
@@ -1145,6 +1186,36 @@ async function syncTrackChangeLogic(currId: string, currName: string, nextId: st
   if (returnedCurrentQueueEntryId && (!returnedSong || (currId && !isObservedSong(returnedSong)))) {
     returnedCurrentQueueEntryId = '';
     playerPausedAfterRequests = false;
+  }
+
+  const preserveExternalSelection = shouldPreserveExternalTrackSelection({
+    playerKey: getSelectedPlayerKey(),
+    managedActionActive: Boolean(managedAction),
+    observed: observedCurrentTrack,
+    currentRequest: currentPlayingSong,
+    queueHead: targetQueue[0],
+    likelyManualSelection,
+    previousNextObservation: priorNextObservation
+  });
+  if (preserveExternalSelection && (currentPlayingSong || targetQueue.length > 0)) {
+    const interruptedRequest = currentPlayingSong;
+    currentPlayingSong = null;
+    returnedCurrentQueueEntryId = '';
+    registeredNextGuardKey = '';
+    registeredNextGuardSongIdentity = '';
+    queueHeadNeedsGuardOnlyAfterCurrentChange = false;
+    playerPlaybackPaused = false;
+    writeLog(
+      `[手动选歌] 检测到主播在${getSelectedPlayerLabel()}中选择《${currName}》；`
+      + `${interruptedRequest ? `结束当前点歌《${interruptedRequest.SongName}》，` : ''}`
+      + '保留该歌曲播放，待播队列不消耗。',
+      'Cyan'
+    );
+    setGlobalStatus(`🎧 主播手动播放: ${currName}`);
+    if (isPlaying && targetQueue[0]) {
+      await armNextGuardOnly(targetQueue[0]);
+    }
+    return;
   }
 
   const cancelledEntry = [...cancelledNativeNextSongs.entries()]
@@ -1430,6 +1501,8 @@ async function startPlayerBridge(): Promise<void> {
 }
 
 async function reconnectPlayerBridge(): Promise<boolean> {
+  previousObservedNativeNext = null;
+  previousNextObservation = null;
   updatePlayerCurrentTrack('', '');
   return await connectWithConnectorMaintenanceStatus(
     () => playerManager.reconnect()
@@ -1437,6 +1510,8 @@ async function reconnectPlayerBridge(): Promise<boolean> {
 }
 
 async function startPlayerRadar(): Promise<boolean> {
+  previousObservedNativeNext = null;
+  previousNextObservation = null;
   playerManager.resetObservedTrack();
   updatePlayerCurrentTrack('', '');
   return await connectWithConnectorMaintenanceStatus(
@@ -1477,6 +1552,30 @@ async function pauseActivePlayerAfterRequests(): Promise<void> {
   } finally {
     isPausingAfterRequests = false;
   }
+}
+
+async function addQueryNotice(
+  user: any,
+  songName: string,
+  found: boolean,
+  queueAheadCount: number,
+  detail: string
+) {
+  const avatarUrl = user.avatar || await getBiliAvatar(user.uid);
+  const queryItem = {
+    id: Date.now() + Math.random(),
+    user: { ...user, avatar: avatarUrl },
+    title: `${user.name || user.uname || '观众'} 查询点歌`,
+    detail,
+    songName,
+    queueAheadCount,
+    found
+  };
+  recentQueries.push(queryItem);
+  if (recentQueries.length > 5) recentQueries.shift();
+  setTimeout(() => {
+    recentQueries = recentQueries.filter(item => item.id !== queryItem.id);
+  }, 5000);
 }
 
 async function pauseActivePlayerForQueueReturn(songName: string): Promise<boolean> {
@@ -1687,6 +1786,16 @@ async function guardNextSong(
       );
       return true;
     }
+    if (getNextGuardMode(getSelectedPlayerKey()) === 'passive') {
+      queueHeadNeedsGuardOnlyAfterCurrentChange = false;
+      registeredNextGuardKey = guardKey;
+      registeredNextGuardSongIdentity = getQueueSongIdentity(songInfo);
+      writeLog(
+        `🛡️ 网易云队头已在点歌机内登记，将在实际切歌后判定是否接管: ${songInfo.SongName}`,
+        'DarkGray'
+      );
+      return true;
+    }
     const result = await executePlayerCommand('InsertNext', songInfo);
     if (isSuccessfulPlayerResult(result)) {
       queueHeadNeedsGuardOnlyAfterCurrentChange = false;
@@ -1707,6 +1816,15 @@ async function armNextGuardOnly(songInfo: any): Promise<boolean> {
   return serializeNextGuardOperation(async () => {
     if (!songInfo) return false;
     const guardKey = getNextGuardKey(songInfo);
+    if (getNextGuardMode(getSelectedPlayerKey()) === 'passive') {
+      registeredNextGuardKey = guardKey;
+      registeredNextGuardSongIdentity = getQueueSongIdentity(songInfo);
+      writeLog(
+        `🛡️ 网易云队头守卫已在点歌机内更新，不向播放器注入抢播守卫: ${songInfo.SongName}`,
+        'DarkGray'
+      );
+      return true;
+    }
     const result = await executePlayerCommand('ArmNextGuard', songInfo);
     if (isSuccessfulPlayerResult(result)) {
       registeredNextGuardKey = guardKey;
@@ -1983,6 +2101,13 @@ interface SongRequestResult {
   guardRegistered?: boolean | null;
 }
 
+function normalizeSongSearchKeyword(keyword: string): string {
+  const normalizedKeyword = keyword.replace(/\s+/g, '');
+  return normalizedKeyword === '贞理的小曲' || normalizedKeyword === '真理的小曲'
+    ? 'missing you 具岛直子'
+    : keyword;
+}
+
 async function serializeLocalTestRequest<T>(
   operation: () => Promise<T>
 ): Promise<T> {
@@ -2005,9 +2130,19 @@ async function tryRequestSong(
   mode: LocalSongRequestMode = 'normal'
 ): Promise<SongRequestResult> {
   try {
-    const normalizedKeyword = keyword.replace(/\s+/g, '');
-    if (normalizedKeyword === '贞理的小曲' || normalizedKeyword === '真理的小曲') {
-      keyword = 'missing you 具岛直子';
+    keyword = normalizeSongSearchKeyword(keyword);
+
+    const intakeRejection = getRequestIntakeRejection(isAccepting);
+    if (intakeRejection) {
+      const message = intakeRejection;
+      setGlobalStatus(`⏸️ ${message}`);
+      await addReject(user, message);
+      return {
+        success: false,
+        mode,
+        keyword,
+        message
+      };
     }
 
     if (
@@ -2193,6 +2328,65 @@ async function tryRequestSong(
   }
 }
 
+async function queryRequestedSong(user: any, submittedKeyword: string): Promise<any> {
+  const searchKeyword = normalizeSongSearchKeyword(submittedKeyword);
+  try {
+    const playerKey = getSelectedPlayerKey();
+    const track = (await playerManager.search(searchKeyword))[0];
+    if (!track) {
+      const detail = `未搜到《${submittedKeyword}》，无法查询点歌位置`;
+      await addQueryNotice(user, submittedKeyword, false, 0, detail);
+      setGlobalStatus(`🔎 ${user.name || user.uname || '观众'}查询《${submittedKeyword}》：搜歌无结果`);
+      return {
+        found: false,
+        song: null,
+        queueAheadCount: 0,
+        location: 'missing',
+        searchedSong: null
+      };
+    }
+
+    const searchedSong = {
+      Id: String(track.id),
+      SongName: track.title,
+      ArtistName: track.artist || '未知歌手',
+      PlayerKey: playerKey
+    };
+    const result = findUserSongQueryResult(
+      user.uid,
+      searchedSong,
+      currentPlayingSong,
+      targetQueue
+    );
+    const resolvedSongName = String(searchedSong.SongName || submittedKeyword);
+    if (result.found && result.song) {
+      const detail = result.location === 'current'
+        ? `你点的《${resolvedSongName}》正在播放，前面还有0首歌`
+        : `你点的《${resolvedSongName}》前面还有${result.queueAheadCount}首歌`;
+      await addQueryNotice(user, resolvedSongName, true, result.queueAheadCount, detail);
+      setGlobalStatus(`🔎 ${user.name || user.uname || '观众'}查询《${resolvedSongName}》：前面还有${result.queueAheadCount}首`);
+    } else {
+      const detail = `没有找到你点的《${resolvedSongName}》`;
+      await addQueryNotice(user, resolvedSongName, false, 0, detail);
+      setGlobalStatus(`🔎 ${user.name || user.uname || '观众'}查询《${resolvedSongName}》：未找到该用户的点歌`);
+    }
+    return { ...result, searchedSong };
+  } catch (err: any) {
+    writeLog(`[点歌查询] ${getSelectedPlayerLabel()} 搜索异常: ${err?.message || err}`, 'Red');
+    const detail = `查询《${submittedKeyword}》时搜歌失败`;
+    await addQueryNotice(user, submittedKeyword, false, 0, detail);
+    setGlobalStatus('🔎 点歌查询搜歌失败');
+    return {
+      found: false,
+      song: null,
+      queueAheadCount: 0,
+      location: 'missing',
+      searchedSong: null,
+      error: err?.message || String(err)
+    };
+  }
+}
+
 async function handleDanmaku(user: any, msg: string): Promise<void> {
   if (msg.toLowerCase().includes('test') || msg.includes('测试')) writeLog(`[弹幕] 测试通信: ${msg}`, 'Cyan');
 
@@ -2201,6 +2395,7 @@ async function handleDanmaku(user: any, msg: string): Promise<void> {
   const isInterruptOrder = msg.startsWith('插队点歌');
   const isPlayNowOrder = msg.startsWith('立即点歌');
   const isSuperChatOrder = user?.isSuperChat === true && isOrder;
+  const songQueryKeyword = getSongQueryKeyword(msg);
   const isCancel = msg.startsWith('撤回');
   const isSkip = msg === '切歌' || msg === '跳过';
   const isToggleAccept = (
@@ -2210,7 +2405,24 @@ async function handleDanmaku(user: any, msg: string): Promise<void> {
     || msg === '关闭点歌'
   );
 
-  if (!isAccepting && (isOrder || isTopOrder || isInterruptOrder || isPlayNowOrder || isCancel || isSkip)) return;
+  if (songQueryKeyword) {
+    await queryRequestedSong(user, songQueryKeyword);
+    return;
+  }
+
+  if (!isAccepting && (isOrder || isTopOrder || isInterruptOrder || isPlayNowOrder)) {
+    const keyword = isPlayNowOrder
+      ? msg.replace(/^立即点歌/, '').trim()
+      : isInterruptOrder
+        ? msg.replace(/^插队点歌/, '').trim()
+        : isTopOrder
+          ? msg.replace(/^(置顶点歌|优先点歌)/, '').trim()
+          : msg.substring(2).trim();
+    const reason = getRequestIntakeRejection(isAccepting)!;
+    if (keyword) await addReject(user, reason);
+    setGlobalStatus(`⏸️ ${reason}`);
+    return;
+  }
 
   if (isToggleAccept) {
     const permission = checkPermission(user, 'ToggleAcceptPermission');
@@ -3080,7 +3292,7 @@ function startBackendServer() {
         ? Math.min(1, Math.max(0, configuredNoticeOpacity))
         : 0.94;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, playerPlaybackPaused, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity, overlayNoticeSuccessColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeSuccessColor, '#10b981'), overlayNoticeFailureColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeFailureColor, '#f43f5e'), rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
+      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, playerPlaybackPaused, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity, overlayNoticeSuccessColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeSuccessColor, '#10b981'), overlayNoticeFailureColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeFailureColor, '#f43f5e'), overlayNoticeQueryColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeQueryColor, '#38bdf8'), rejects: recentRejects, successes: recentSuccesses, queries: recentQueries, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
       return;
     }
 
@@ -3155,7 +3367,8 @@ function startBackendServer() {
           success: true,
           localOnly: true,
           serialized: true,
-          bypassesDanmakuChecks: true,
+          bypassesPermissionsAndCooldowns: true,
+          respectsRequestIntakeState: true,
           endpoint: `http://127.0.0.1:${INTERNAL_HTTP_PORT}/api/test/request-song`,
           method: 'POST',
           body: {
@@ -3206,13 +3419,16 @@ function startBackendServer() {
       const requestedBy = String(body.requestedBy || '本地测试 API')
         .trim()
         .slice(0, 40) || '本地测试 API';
+      const requestedUserId = String(body.userId || `local-test-api-${requestId}`)
+        .trim()
+        .slice(0, 80) || `local-test-api-${requestId}`;
       writeLog(
         `[本地测试 API] #${requestId} ${simulatesSuperChat ? 'SC ' : ''}${mode}: ${keyword}`,
         simulatesSuperChat ? 'Magenta' : 'Cyan'
       );
       const result = await serializeLocalTestRequest(
         () => tryRequestSong({
-          uid: `local-test-api-${requestId}`,
+          uid: requestedUserId,
           name: requestedBy,
           avatar: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%236366f1%22/%3E%3Ctext x=%2232%22 y=%2241%22 text-anchor=%22middle%22 font-size=%2228%22 fill=%22white%22%3ET%3C/text%3E%3C/svg%3E',
           guardLevel: 0,
@@ -3235,6 +3451,52 @@ function startBackendServer() {
         },
         current: currentPlayingSong || playerCurrentTrack,
         queue: targetQueue
+      }));
+      return;
+    }
+
+    if (url.pathname === '/api/test/query-song') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      if (!isLoopbackRemoteAddress(req.socket.remoteAddress)) {
+        res.writeHead(403);
+        res.end(JSON.stringify({ success: false, message: '本地测试查询接口仅允许回环地址访问' }));
+        return;
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405);
+        res.end(JSON.stringify({ success: false, message: '仅支持 POST 查询' }));
+        return;
+      }
+
+      const body = await readJsonRequest(req);
+      const keyword = normalizeLocalSongKeyword(body.keyword);
+      if (!keyword) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ success: false, message: 'keyword 必须是 1 到 200 个字符的字符串' }));
+        return;
+      }
+
+      const user = {
+        uid: String(body.userId || 'local-debug-user').trim().slice(0, 80) || 'local-debug-user',
+        name: String(body.requestedBy || '模拟查询用户').trim().slice(0, 40) || '模拟查询用户',
+        avatar: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%230ea5e9%22/%3E%3Ctext x=%2232%22 y=%2241%22 text-anchor=%22middle%22 font-size=%2228%22 fill=%22white%22%3EQ%3C/text%3E%3C/svg%3E',
+        guardLevel: 0,
+        isSuperChat: body.superChat === true,
+        superChatPrice: body.superChat === true ? Math.max(0, Number(body.superChatPrice) || 30) : 0
+      };
+      const queryResult = await serializeLocalTestRequest(
+        () => queryRequestedSong(user, keyword)
+      );
+      writeLog(
+        `[本地测试 API] 查询 ${keyword}${queryResult.searchedSong?.SongName ? ` → ${queryResult.searchedSong.SongName}` : ''}: ${queryResult.found ? `前面 ${queryResult.queueAheadCount} 首` : '未找到'}`,
+        'Cyan'
+      );
+      res.end(JSON.stringify({
+        success: true,
+        keyword,
+        ...queryResult,
+        song: queryResult.song || undefined,
+        resolvedSong: queryResult.searchedSong || undefined
       }));
       return;
     }
@@ -3293,6 +3555,10 @@ function startBackendServer() {
         appConfig.sysConfig.OverlayNoticeFailureColor = normalizeOverlayNoticeColor(
           appConfig.sysConfig.OverlayNoticeFailureColor,
           '#f43f5e'
+        );
+        appConfig.sysConfig.OverlayNoticeQueryColor = normalizeOverlayNoticeColor(
+          appConfig.sysConfig.OverlayNoticeQueryColor,
+          '#38bdf8'
         );
         appConfig.sysConfig.ExternalApiPort = getExternalApiPort();
         delete appConfig.sysConfig.EnableCDP;

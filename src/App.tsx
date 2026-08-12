@@ -118,15 +118,17 @@ interface OverlayNotice {
     reason?: string;
     songName?: string;
     queueAheadCount?: number;
+    found?: boolean;
 }
 
 interface BannerNotice extends OverlayNotice {
-    kind: 'success' | 'failure';
+    kind: 'success' | 'failure' | 'query';
     phase: 'visible' | 'leaving';
 }
 
 const DEFAULT_NOTICE_SUCCESS_COLOR = '#10b981';
 const DEFAULT_NOTICE_FAILURE_COLOR = '#f43f5e';
+const DEFAULT_NOTICE_QUERY_COLOR = '#38bdf8';
 
 const normalizeHexColor = (value: unknown, fallback: string): string => (
     typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
@@ -522,8 +524,10 @@ const SuccessBannerOverlay: React.FC = () => {
     const bannerOpacityRef = useRef<number>(0.94);
     const bannerSuccessColorRef = useRef<string>(DEFAULT_NOTICE_SUCCESS_COLOR);
     const bannerFailureColorRef = useRef<string>(DEFAULT_NOTICE_FAILURE_COLOR);
+    const bannerQueryColorRef = useRef<string>(DEFAULT_NOTICE_QUERY_COLOR);
     const lastSuccessIdRef = useRef<number>(0);
     const lastRejectIdRef = useRef<number>(0);
+    const lastQueryIdRef = useRef<number>(0);
     const exitTimerRefs = useRef<Map<number, number>>(new Map());
     const clearTimerRefs = useRef<Map<number, number>>(new Map());
 
@@ -535,7 +539,7 @@ const SuccessBannerOverlay: React.FC = () => {
             clearTimerRefs.current.clear();
         };
 
-        const showNotice = (notice: OverlayNotice, kind: 'success' | 'failure') => {
+        const showNotice = (notice: OverlayNotice, kind: BannerNotice['kind']) => {
             setNotices(prev => [{ ...notice, kind, phase: 'visible' }, ...prev]);
 
             const exitTimer = window.setTimeout(() => {
@@ -582,23 +586,34 @@ const SuccessBannerOverlay: React.FC = () => {
                     json.overlayNoticeFailureColor,
                     DEFAULT_NOTICE_FAILURE_COLOR
                 );
+                bannerQueryColorRef.current = normalizeHexColor(
+                    json.overlayNoticeQueryColor,
+                    DEFAULT_NOTICE_QUERY_COLOR
+                );
                 const successes: OverlayNotice[] = Array.isArray(json.successes) ? json.successes : [];
                 const rejects: OverlayNotice[] = Array.isArray(json.rejects) ? json.rejects : [];
+                const queries: OverlayNotice[] = Array.isArray(json.queries) ? json.queries : [];
                 const incoming = [
                     ...successes
                         .filter(item => typeof item.id === 'number' && item.id > lastSuccessIdRef.current)
                         .map(item => ({ ...item, kind: 'success' as const })),
                     ...rejects
                         .filter(item => typeof item.id === 'number' && item.id > lastRejectIdRef.current)
-                        .map(item => ({ ...item, kind: 'failure' as const }))
+                        .map(item => ({ ...item, kind: 'failure' as const })),
+                    ...queries
+                        .filter(item => typeof item.id === 'number' && item.id > lastQueryIdRef.current)
+                        .map(item => ({ ...item, kind: 'query' as const }))
                 ].sort((a, b) => a.id - b.id);
                 if (incoming.length === 0) return;
                 const successItems = incoming.filter(item => item.kind === 'success');
                 const rejectItems = incoming.filter(item => item.kind === 'failure');
+                const queryItems = incoming.filter(item => item.kind === 'query');
                 const latestSuccess = successItems.length > 0 ? successItems[successItems.length - 1] : null;
                 const latestReject = rejectItems.length > 0 ? rejectItems[rejectItems.length - 1] : null;
+                const latestQuery = queryItems.length > 0 ? queryItems[queryItems.length - 1] : null;
                 if (latestSuccess) lastSuccessIdRef.current = latestSuccess.id;
                 if (latestReject) lastRejectIdRef.current = latestReject.id;
+                if (latestQuery) lastQueryIdRef.current = latestQuery.id;
                 incoming.forEach(item => showNotice(item, item.kind));
             } catch {
                 // Keep the browser source transparent while offline.
@@ -623,7 +638,11 @@ const SuccessBannerOverlay: React.FC = () => {
                         const aheadCount = Math.max(0, Number(notice.queueAheadCount || 0));
                         const failedSongMatch = /未搜到歌曲:\s*(.+)$/.exec(notice.reason || '');
                         const failedSongName = failedSongMatch?.[1]?.trim();
-                        const bannerText = notice.kind === 'success'
+                        const bannerText = notice.kind === 'query'
+                            ? notice.found
+                                ? `${userName}查询《${songName}》：前面还有${aheadCount}首歌`
+                                : `${userName}查询《${songName}》：没有找到该用户的点歌`
+                            : notice.kind === 'success'
                             ? `${userName}\u70b9\u6b4c\u300a${songName}\u300b\u6210\u529f\uff0c\u524d\u9762\u8fd8\u6709${aheadCount}\u9996\u6b4c`
                             : failedSongName
                                 ? `${userName}\u70b9\u6b4c\u300a${failedSongName}\u300b\u5931\u8d25\uff0c${notice.reason?.replace(/未搜到歌曲:\s*(.+)$/, '未搜到歌曲') || '请求未通过'}`
@@ -634,9 +653,12 @@ const SuccessBannerOverlay: React.FC = () => {
                         const isLightTheme = bannerThemeRef.current === 'light';
                         const alpha = Math.min(1, Math.max(0, bannerOpacityRef.current));
                         const isSuccess = notice.kind === 'success';
-                        const accentColor = isSuccess
-                            ? bannerSuccessColorRef.current
-                            : bannerFailureColorRef.current;
+                        const isQuery = notice.kind === 'query';
+                        const accentColor = isQuery
+                            ? bannerQueryColorRef.current
+                            : isSuccess
+                                ? bannerSuccessColorRef.current
+                                : bannerFailureColorRef.current;
                         const containerStyle = isLightTheme
                             ? {
                                 background: `rgba(255, 255, 255, ${alpha})`,
@@ -672,8 +694,10 @@ const SuccessBannerOverlay: React.FC = () => {
                             borderColor: isLightTheme ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.1)'
                         };
                         const bodyTextClass = isLightTheme ? 'text-slate-800' : 'text-slate-50';
-                        const statusTitle = isSuccess ? '\u70b9\u6b4c\u6210\u529f' : '\u70b9\u6b4c\u5931\u8d25';
-                        const queueLabel = aheadCount > 0 ? `\u524d\u65b9 ${aheadCount} \u9996` : '\u5373\u5c06\u64ad\u653e';
+                        const statusTitle = isQuery ? '点歌查询' : isSuccess ? '\u70b9\u6b4c\u6210\u529f' : '\u70b9\u6b4c\u5931\u8d25';
+                        const queueLabel = isQuery
+                            ? `前方 ${aheadCount} 首`
+                            : aheadCount > 0 ? `\u524d\u65b9 ${aheadCount} \u9996` : '\u5373\u5c06\u64ad\u653e';
 
                         return (
                             <div
@@ -710,7 +734,12 @@ const SuccessBannerOverlay: React.FC = () => {
                                             style={{ backgroundColor: accentColor, borderColor: isLightTheme ? '#ffffff' : '#0f172a' }}
                                             className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full border-2 text-white"
                                         >
-                                            {isSuccess ? (
+                                            {isQuery ? (
+                                                <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" aria-hidden="true">
+                                                    <circle cx="6.8" cy="6.8" r="3.6" stroke="currentColor" strokeWidth="1.8" />
+                                                    <path d="m9.6 9.6 3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                                </svg>
+                                            ) : isSuccess ? (
                                                 <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" aria-hidden="true">
                                                     <path d="m3.5 8.3 2.7 2.6 6.2-6.1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
                                                 </svg>
@@ -727,7 +756,7 @@ const SuccessBannerOverlay: React.FC = () => {
                                                 <span style={{ backgroundColor: accentColor }} className="h-1.5 w-1.5 rounded-full"></span>
                                                 {statusTitle}
                                             </span>
-                                            {isSuccess && (
+                                            {(isSuccess || (isQuery && notice.found)) && (
                                                 <span style={queueBadgeStyle} className="rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none">
                                                     {queueLabel}
                                                 </span>
@@ -943,8 +972,10 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
 
     const [successes, setSuccesses] = useState<OverlayNotice[]>([]);
     const [rejects, setRejects] = useState<OverlayNotice[]>([]);
+    const [queries, setQueries] = useState<OverlayNotice[]>([]);
     const [noticeSuccessColor, setNoticeSuccessColor] = useState(DEFAULT_NOTICE_SUCCESS_COLOR);
     const [noticeFailureColor, setNoticeFailureColor] = useState(DEFAULT_NOTICE_FAILURE_COLOR);
+    const [noticeQueryColor, setNoticeQueryColor] = useState(DEFAULT_NOTICE_QUERY_COLOR);
     const [, setPrevQueue] = useState<SongInfo[]>([]);
     const [newItemsIds, setNewItemsIds] = useState<Set<string>>(new Set());
     const queueItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -1120,8 +1151,10 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
 
                 setSuccesses(json.successes || []);
                 setRejects(json.rejects || []);
+                setQueries(json.queries || []);
                 setNoticeSuccessColor(normalizeHexColor(json.overlayNoticeSuccessColor, DEFAULT_NOTICE_SUCCESS_COLOR));
                 setNoticeFailureColor(normalizeHexColor(json.overlayNoticeFailureColor, DEFAULT_NOTICE_FAILURE_COLOR));
+                setNoticeQueryColor(normalizeHexColor(json.overlayNoticeQueryColor, DEFAULT_NOTICE_QUERY_COLOR));
 
                 const safeQueue: SongInfo[] = Array.isArray(json.queue) ? json.queue : [];
                 setPrevQueue(prev => {
@@ -1695,6 +1728,19 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                                 <div className="flex flex-col min-w-0 z-10">
                                     <div style={{ color: noticeSuccessColor }} className="text-[12px] font-bold truncate drop-shadow-md flex items-center gap-1.5"><span>✅</span> <span>{notice.title || `${notice.user.name || notice.user.uname || '观众'} 点歌成功`}</span></div>
                                     <div className="text-[10px] text-white/85 truncate mt-0.5">{notice.detail || '已成功处理点歌请求'}</div>
+                                </div>
+                            </div>
+                        ))}
+
+                        {queries.map((notice) => (
+                            <div key={notice.id} style={{ borderColor: colorWithAlpha(noticeQueryColor, 0.3), backgroundColor: colorWithAlpha(noticeQueryColor, 0.1) }} className="animate-slide-in glass-card rounded-lg p-2 flex items-center gap-3 border mb-1 relative overflow-hidden shrink-0">
+                                <div style={{ background: `linear-gradient(90deg, transparent, ${colorWithAlpha(noticeQueryColor, 0.1)}, transparent)` }} className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite]"></div>
+                                <div style={{ borderColor: colorWithAlpha(noticeQueryColor, 0.5), boxShadow: `0 0 8px ${colorWithAlpha(noticeQueryColor, 0.35)}` }} className="w-8 h-8 rounded-full overflow-hidden shrink-0 border">
+                                    <img src={notice.user.avatar} className="w-full h-full object-cover" />
+                                </div>
+                                <div className="flex flex-col min-w-0 z-10">
+                                    <div style={{ color: noticeQueryColor }} className="text-[12px] font-bold truncate drop-shadow-md flex items-center gap-1.5"><span>🔎</span> <span>{notice.title || `${notice.user.name || notice.user.uname || '观众'} 查询点歌`}</span></div>
+                                    <div className="text-[10px] text-white/85 truncate mt-0.5">{notice.detail}</div>
                                 </div>
                             </div>
                         ))}
@@ -2597,6 +2643,7 @@ const AdminWidget: React.FC = () => {
                     keyword: debugInput,
                     mode: 'normal',
                     superChat: false,
+                    userId: 'local-debug-user',
                     requestedBy: '模拟普通弹幕用户'
                 })
             });
@@ -2607,6 +2654,31 @@ const AdminWidget: React.FC = () => {
                 showAdminToast(`❌ ${json.message || '模拟普通点歌失败'}`);
             }
         } catch(err: any) { showAdminToast("❌ 请求后端失败：" + err.message); }
+    };
+
+    const handleDebugQuery = async () => {
+        if (!debugInput.trim()) return showAdminToast('❌ 请输入要查询的歌曲名！');
+        try {
+            const res = await fetch('http://localhost:5555/api/test/query-song', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    keyword: debugInput,
+                    userId: 'local-debug-user',
+                    requestedBy: '模拟普通弹幕用户'
+                })
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) {
+                showAdminToast(`❌ ${json.message || '模拟查询失败'}`);
+            } else if (json.found) {
+                showAdminToast(`🔎 查询成功：《${json.resolvedSong?.SongName || json.song?.SongName || debugInput}》前面还有 ${json.queueAheadCount} 首歌`);
+            } else {
+                showAdminToast(`🔎 未找到该模拟用户点的《${json.resolvedSong?.SongName || debugInput}》`);
+            }
+        } catch (err: any) {
+            showAdminToast('❌ 请求后端失败：' + err.message);
+        }
     };
 
     const handleDebugSuperChatRequest = async () => {
@@ -3281,6 +3353,14 @@ const AdminWidget: React.FC = () => {
                                         </div>
                                         <p className="text-xs text-gray-500 mb-6 leading-relaxed">模拟一名普通观众发送点歌弹幕，完整经过歌曲搜索和点歌处理，并将歌曲加入待播列表的普通队列。</p>
 
+                                        <div className="mb-6 rounded-xl border border-sky-400/20 bg-sky-500/[0.06] p-4">
+                                            <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-sky-300">🔎 模拟点歌查询</h3>
+                                            <p className="mb-3 text-xs leading-relaxed text-gray-500">使用上方歌名，模拟同一名普通弹幕用户发送“查询+歌名”。查询会先像点歌一样搜歌，再用搜到的真实歌曲匹配队列；可以先加入普通队列，再测试别名查询。</p>
+                                            <button onClick={handleDebugQuery} className="w-full rounded-lg border border-sky-300/25 bg-sky-600 px-6 py-3 text-sm font-bold text-white shadow-lg transition-colors hover:bg-sky-500">
+                                                模拟发送“查询{debugInput.trim() || '+歌名'}”
+                                            </button>
+                                        </div>
+
                                         <div className="mb-8 rounded-xl border border-pink-400/20 bg-pink-500/[0.06] p-4">
                                             <div className="mb-2 flex items-center justify-between gap-3">
                                                 <h3 className="text-sm font-bold text-pink-300 uppercase tracking-wider">💗 模拟 SC 点歌</h3>
@@ -3756,7 +3836,7 @@ const AdminWidget: React.FC = () => {
                                     <div id="settings-notices" className="settings-card bg-white/5 p-6 rounded-xl border border-emerald-400/20 space-y-5 mb-6">
                                         <div className="border-b border-white/10 pb-3">
                                             <h3 className="text-sm font-bold text-emerald-200">点歌提示框</h3>
-                                            <p className="mt-1 text-[11px] text-gray-500">集中设置 OBS 顶部点歌成功/失败通知条的尺寸、主题、透明度与状态颜色。</p>
+                                            <p className="mt-1 text-[11px] text-gray-500">集中设置 OBS 顶部点歌成功、失败与查询通知条的尺寸、主题、透明度与状态颜色。</p>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3773,6 +3853,13 @@ const AdminWidget: React.FC = () => {
                                                 value={config.config.OverlayNoticeFailureColor}
                                                 fallback={DEFAULT_NOTICE_FAILURE_COLOR}
                                                 onChange={value => setConfig({...config, config: {...config.config, OverlayNoticeFailureColor: value}})}
+                                            />
+                                            <NoticeColorPicker
+                                                label="点歌查询颜色"
+                                                description="查询到与未查询到歌曲的通知共用这个颜色。"
+                                                value={config.config.OverlayNoticeQueryColor}
+                                                fallback={DEFAULT_NOTICE_QUERY_COLOR}
+                                                onChange={value => setConfig({...config, config: {...config.config, OverlayNoticeQueryColor: value}})}
                                             />
                                         </div>
 

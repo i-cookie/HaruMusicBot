@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  getRequestIntakeRejection,
   hasPendingSongRequestByUser,
   normalizeUserIdList,
   userIdInList
 } from '../electron/song-request-policy.ts';
+
+test('rejects every new song request while request intake is paused', () => {
+  assert.equal(getRequestIntakeRejection(false), '当前已暂停接收新点歌');
+  assert.equal(getRequestIntakeRejection(true), null);
+});
 
 test('allows a user with no active or queued requests', () => {
   assert.equal(hasPendingSongRequestByUser('1001', [], null), false);

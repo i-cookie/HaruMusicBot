@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getBasicSongRequestKeyword,
+  getSongQueryKeyword,
   parseSuperChatCommand
 } from '../electron/super-chat-policy.ts';
 
@@ -49,4 +50,11 @@ test('extracts a non-empty keyword only from basic 点歌 or 點歌 content', ()
   assert.equal(getBasicSongRequestKeyword('点歌'), null);
   assert.equal(getBasicSongRequestKeyword('置顶点歌 晴天'), null);
   assert.equal(getBasicSongRequestKeyword('谢谢主播'), null);
+});
+
+test('extracts a non-empty keyword from 查询 or 查詢 content', () => {
+  assert.equal(getSongQueryKeyword('查询 晴天'), '晴天');
+  assert.equal(getSongQueryKeyword('查詢晴天'), '晴天');
+  assert.equal(getSongQueryKeyword('查询'), null);
+  assert.equal(getSongQueryKeyword('点歌 晴天'), null);
 });
