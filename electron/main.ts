@@ -16,6 +16,7 @@ import {
   planQueueHeadMutation,
   queueSongIdentity,
   shouldDeferManagedTrackObservation,
+  shouldPreserveQueueDuringManagedReplay,
   shouldPreserveGuardAfterImmediate,
   tracksRepresentSameSong
 } from './queue-head-policy';
@@ -36,6 +37,15 @@ import {
   getBasicSongRequestKeyword,
   parseSuperChatCommand
 } from './super-chat-policy';
+import {
+  appendToNormalQueue,
+  appendToPriorityQueue,
+  combinedQueueAheadCount,
+  isPriorityQueueSong,
+  prependToNormalQueue,
+  prependToPriorityQueue,
+  reorderWithinQueuePartition
+} from './priority-queue-policy';
 import {
   getNeteaseSongCover
 } from './players/netease-player';
@@ -420,10 +430,13 @@ let qrPollTimer: NodeJS.Timeout | null = null;
 let qrLoginAttemptId = 0;
 
 let targetQueue: any[] = [];
+let queueEntrySequence = 0;
 let currentPlayingSong: any = null;
 let playerCurrentTrack: any = null;
 let playerPausedAfterRequests = false;
+let playerPlaybackPaused = false;
 let isPausingAfterRequests = false;
+let returnedCurrentQueueEntryId = '';
 let lastQueueActionTime = 0; // 全局队列操作防抖冷却时间
 let activePlayerSnapshot: PlayerSnapshot | null = null;
 let playerConnecting = false;
@@ -438,7 +451,7 @@ let localTestRequestTail: Promise<void> = Promise.resolve();
 
 interface ManagedPlayerAction {
   id: number;
-  kind: 'play-now' | 'interrupt';
+  kind: 'play-now' | 'interrupt' | 'replay';
   target: any;
   command: 'PlaySelected' | 'InterruptSelected';
   startedAt: number;
@@ -510,7 +523,8 @@ const playerManager = new PlayerManager({
         queueHeadNeedsGuardOnlyAfterCurrentChange = false;
         void armNextGuardOnly(targetQueue[0]);
       }
-      if (!managedAction.inFlight
+      if (managedAction.kind !== 'replay'
+          && !managedAction.inFlight
           && activeManagedPlayerAction?.id === managedAction.id) {
         activeManagedPlayerAction = null;
       }
@@ -1101,8 +1115,37 @@ async function syncTrackChangeLogic(currId: string, currName: string, nextId: st
       `[动作归因] 点歌机动作 #${managedAction.id} 已确认最终目标: ${currName}`,
       'DarkGray'
     );
+    if (shouldPreserveQueueDuringManagedReplay(
+      managedAction.kind,
+      managedAction.target,
+      observed
+    )) {
+      currentPlayingSong = managedAction.target;
+      playerPlaybackPaused = false;
+      writeLog(
+        `[重播保护] 已确认原点歌重新开始，保留全部待播队列项: ${currName}`,
+        'DarkGray'
+      );
+      return;
+    }
   }
   let stateChanged = false;
+
+  const returnedSong = returnedCurrentQueueEntryId
+    ? targetQueue.find(song => song?.QueueEntryId === returnedCurrentQueueEntryId)
+    : null;
+  if (!isPlaying && returnedSong && isObservedSong(returnedSong)) {
+    currentPlayingSong = null;
+    writeLog(
+      `[退回队列] 播放器仍停留在已退回歌曲，保持暂停且不消耗队列: ${returnedSong.SongName}`,
+      'DarkGray'
+    );
+    return;
+  }
+  if (returnedCurrentQueueEntryId && (!returnedSong || (currId && !isObservedSong(returnedSong)))) {
+    returnedCurrentQueueEntryId = '';
+    playerPausedAfterRequests = false;
+  }
 
   const cancelledEntry = [...cancelledNativeNextSongs.entries()]
     .find(([, song]) => isObservedSong(song));
@@ -1427,6 +1470,7 @@ async function pauseActivePlayerAfterRequests(): Promise<void> {
     const result = await executePlayerCommand('Pause');
     if (isSuccessfulPlayerResult(result)) {
       playerPausedAfterRequests = true;
+      playerPlaybackPaused = true;
       writeLog('[播放策略] 最后一首点歌已结束，播放器已自动暂停', 'Green');
       setGlobalStatus('点歌已播完，播放器已暂停');
     }
@@ -1435,8 +1479,147 @@ async function pauseActivePlayerAfterRequests(): Promise<void> {
   }
 }
 
+async function pauseActivePlayerForQueueReturn(songName: string): Promise<boolean> {
+  if (activePlayerSnapshot?.capabilities?.pause === false) {
+    playerPausedAfterRequests = false;
+    playerPlaybackPaused = false;
+    writeLog(
+      `[退回队列] ${getSelectedPlayerLabel()}连接器不支持明确暂停，自动连播已暂停，但播放器无法自动暂停`,
+      'Yellow'
+    );
+    setGlobalStatus(`⚠️ 已退回所属队首并暂停自动连播；${getSelectedPlayerLabel()}不支持自动暂停`);
+    return false;
+  }
+  const result = await executePlayerCommand('Pause');
+  const paused = isSuccessfulPlayerResult(result);
+  playerPausedAfterRequests = false;
+  playerPlaybackPaused = paused;
+  if (paused) {
+    writeLog(`[退回队列] 已退回所属队首并暂停播放器: ${songName}`, 'Green');
+    setGlobalStatus(`🔙 已退回所属队首并暂停: ${songName}`);
+  } else {
+    writeLog(`[退回队列] 已退回所属队首并暂停自动连播，但播放器暂停命令未成功: ${songName}`, 'Yellow');
+    setGlobalStatus(`⚠️ 已退回所属队首并暂停自动连播；播放器暂停失败: ${songName}`);
+  }
+  return paused;
+}
+
+async function controlCurrentPlayerPlayback(
+  action: 'pause' | 'resume'
+): Promise<boolean> {
+  const returnedSongIndex = returnedCurrentQueueEntryId
+    ? targetQueue.findIndex(song => song?.QueueEntryId === returnedCurrentQueueEntryId)
+    : -1;
+  const returnedSong = returnedSongIndex >= 0 ? targetQueue[returnedSongIndex] : null;
+  const currentSong = currentPlayingSong || returnedSong || playerCurrentTrack;
+  if (!currentSong) {
+    setGlobalStatus('⚠️ 当前没有可控制的歌曲');
+    return false;
+  }
+
+  const capability = action === 'pause'
+    ? activePlayerSnapshot?.capabilities?.pause
+    : activePlayerSnapshot?.capabilities?.resume;
+  if (capability === false) {
+    const label = action === 'pause' ? '暂停' : '继续播放';
+    setGlobalStatus(`⚠️ ${getSelectedPlayerLabel()}连接器不支持${label}`);
+    return false;
+  }
+
+  const command = action === 'pause' ? 'Pause' : 'Resume';
+  const result = await executePlayerCommand(command);
+  const success = isSuccessfulPlayerResult(result);
+  if (success) {
+    playerPlaybackPaused = action === 'pause';
+    if (action !== 'pause') {
+      playerPausedAfterRequests = false;
+      if (returnedSong && isObservedSong(returnedSong)) {
+        currentPlayingSong = targetQueue.splice(returnedSongIndex, 1)[0];
+        returnedCurrentQueueEntryId = '';
+      }
+    }
+    setGlobalStatus(
+      action === 'pause'
+        ? `⏸️ 已暂停: ${currentSong.SongName}`
+        : `▶️ 已继续播放: ${currentSong.SongName}`
+    );
+  }
+  return success;
+}
+
+async function replayCurrentRequestedSong(): Promise<boolean> {
+  const replaySong = currentPlayingSong;
+  if (!replaySong) {
+    setGlobalStatus('⚠️ 当前不是用户点歌，无法执行点歌重播');
+    return false;
+  }
+  if (
+    activePlayerSnapshot?.capabilities?.previous === false
+    || activePlayerSnapshot?.capabilities?.playSelected === false
+  ) {
+    setGlobalStatus(`⚠️ ${getSelectedPlayerLabel()}连接器不支持重新播放指定歌曲`);
+    return false;
+  }
+
+  const managedAction: ManagedPlayerAction = {
+    id: ++managedPlayerActionSequence,
+    kind: 'replay',
+    target: replaySong,
+    command: 'PlaySelected',
+    startedAt: Date.now(),
+    expiresAt: Date.now() + 12_000,
+    inFlight: true,
+    targetObserved: false
+  };
+  activeManagedPlayerAction = managedAction;
+  setTimeout(() => {
+    if (
+      activeManagedPlayerAction?.id === managedAction.id
+      && Date.now() >= managedAction.expiresAt
+    ) {
+      activeManagedPlayerAction = null;
+      writeLog(`[重播] 等待当前点歌重新开始超时: ${replaySong.SongName}`, 'Yellow');
+    }
+  }, Math.max(0, managedAction.expiresAt - Date.now() + 50));
+
+  writeLog(`[重播] 开始重新播放当前点歌: ${replaySong.SongName}`, 'Cyan');
+  const wasPaused = playerPlaybackPaused;
+  if (!wasPaused && activePlayerSnapshot?.capabilities?.pause !== false) {
+    await executePlayerCommand('Pause');
+  }
+  const previousResult = await executePlayerCommand('Previous');
+  if (!isSuccessfulPlayerResult(previousResult)) {
+    managedAction.inFlight = false;
+    if (activeManagedPlayerAction?.id === managedAction.id) activeManagedPlayerAction = null;
+    if (!wasPaused && activePlayerSnapshot?.capabilities?.resume !== false) {
+      await executePlayerCommand('Resume');
+    }
+    setGlobalStatus(`⚠️ 播放器未能重置歌曲进度，仍保持当前点歌: ${replaySong.SongName}`);
+    return false;
+  }
+
+  const result = await executePlayerCommand('PlaySelected', replaySong);
+  managedAction.inFlight = false;
+  const success = isSuccessfulPlayerResult(result);
+  if (!success) {
+    if (activeManagedPlayerAction?.id === managedAction.id) activeManagedPlayerAction = null;
+    setGlobalStatus(`⚠️ 重播未成功，仍保持当前点歌: ${replaySong.SongName}`);
+    return false;
+  }
+
+  currentPlayingSong = replaySong;
+  playerPlaybackPaused = false;
+  playerPausedAfterRequests = false;
+  registeredNextGuardKey = '';
+  registeredNextGuardSongIdentity = '';
+  if (targetQueue[0]) await armNextGuardOnly(targetQueue[0]);
+  setGlobalStatus(`🔁 已从头重播当前点歌: ${replaySong.SongName}`);
+  return true;
+}
+
 async function requestPlayerNext(): Promise<boolean> {
   playerPausedAfterRequests = false;
+  playerPlaybackPaused = false;
   const result = await executePlayerCommand('Next');
   return isSuccessfulPlayerResult(result);
 }
@@ -1595,7 +1778,10 @@ async function playSongNow(
   mode: 'play-now' | 'interrupt' = 'play-now'
 ): Promise<boolean> {
   if (!songInfo) return false;
+  isPlaying = true;
   playerPausedAfterRequests = false;
+  playerPlaybackPaused = false;
+  returnedCurrentQueueEntryId = '';
   const operationState = await serializeNextGuardOperation(async () => {
     const previousCurrentPlayingSong = currentPlayingSong;
     const hadRegisteredNativeNext = Boolean(registeredNextGuardKey)
@@ -1865,6 +2051,7 @@ async function tryRequestSong(
       ? await getNcmSongCover(track.id)
       : '');
     const newSong = {
+      QueueEntryId: `queue-${Date.now()}-${++queueEntrySequence}`,
       Id: String(track.id),
       SongName: track.title,
       ArtistName: track.artist || '未知歌手',
@@ -1877,20 +2064,19 @@ async function tryRequestSong(
       CoverUrl: coverUrl,
       GuardLevel: user.guardLevel,
       IsSuperChat: user?.isSuperChat === true,
-      SuperChatPrice: user?.isSuperChat === true ? Number(user.superChatPrice) || 0 : 0
+      SuperChatPrice: user?.isSuperChat === true ? Number(user.superChatPrice) || 0 : 0,
+      QueuePriority: mode === 'top' ? 'priority' : 'normal',
+      IsPriorityRequest: mode === 'top'
     };
     cancelledNativeNextSongs.delete(getQueueSongIdentity(newSong));
-    const getQueueAheadCount = (): number => {
-      const index = targetQueue.findIndex(song => song === newSong);
-      return index >= 0 ? index : 0;
-    };
+    const getQueueAheadCount = (): number => combinedQueueAheadCount(targetQueue, newSong);
 
     if (mode === 'interrupt') {
       await waitForManagedPlayerActionSettlement();
-      if (currentPlayingSong) targetQueue.unshift(currentPlayingSong);
+      if (currentPlayingSong) prependToPriorityQueue(targetQueue, currentPlayingSong);
       setGlobalStatus(`⚡ 插队: ${newSong.SongName}`);
       const playbackConfirmed = await playSongNow(newSong, 'interrupt');
-      if (!playbackConfirmed) targetQueue.unshift(newSong);
+      if (!playbackConfirmed) prependToPriorityQueue(targetQueue, newSong);
       await addSuccess(
         user,
         `${newSong.OrderedBy} 插队点歌成功`,
@@ -1917,7 +2103,7 @@ async function tryRequestSong(
       await waitForManagedPlayerActionSettlement();
       setGlobalStatus(`▶️ 立即: ${newSong.SongName}`);
       const playbackConfirmed = await playSongNow(newSong);
-      if (!playbackConfirmed) targetQueue.unshift(newSong);
+      if (!playbackConfirmed) prependToPriorityQueue(targetQueue, newSong);
       await addSuccess(
         user,
         `${newSong.OrderedBy} 点歌成功`,
@@ -1942,10 +2128,15 @@ async function tryRequestSong(
 
     const previousHead = targetQueue[0] || null;
     if (mode === 'top') {
-      targetQueue.unshift(newSong);
-      setGlobalStatus(`⬆️ 置顶: ${newSong.SongName}`);
+      if (user?.isSuperChat === true) {
+        appendToPriorityQueue(targetQueue, newSong);
+        setGlobalStatus(`💗 SC 优先: ${newSong.SongName}`);
+      } else {
+        prependToPriorityQueue(targetQueue, newSong);
+        setGlobalStatus(`⬆️ 置顶: ${newSong.SongName}`);
+      }
     } else {
-      targetQueue.push(newSong);
+      appendToNormalQueue(targetQueue, newSong);
       setGlobalStatus(`✅ 点歌: ${newSong.SongName}`);
     }
 
@@ -1969,7 +2160,9 @@ async function tryRequestSong(
         ? `${newSong.OrderedBy} 优先点歌成功`
         : `${newSong.OrderedBy} 点歌成功`,
       mode === 'top'
-        ? `《${newSong.SongName}》已置顶到待播队首`
+        ? user?.isSuperChat === true
+          ? `《${newSong.SongName}》已加入优先队列`
+          : `《${newSong.SongName}》已置顶到优先队首`
         : `《${newSong.SongName}》已加入待播队列`,
       newSong.SongName,
       getQueueAheadCount()
@@ -1979,7 +2172,9 @@ async function tryRequestSong(
       mode,
       keyword,
       message: mode === 'top'
-        ? `已置顶: ${newSong.SongName}`
+        ? user?.isSuperChat === true
+          ? `已加入优先队列: ${newSong.SongName}`
+          : `已置顶: ${newSong.SongName}`
         : `已加入待播队列: ${newSong.SongName}`,
       song: newSong,
       queued: true,
@@ -2885,7 +3080,7 @@ function startBackendServer() {
         ? Math.min(1, Math.max(0, configuredNoticeOpacity))
         : 0.94;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity, overlayNoticeSuccessColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeSuccessColor, '#10b981'), overlayNoticeFailureColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeFailureColor, '#f43f5e'), rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
+      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, playerPlaybackPaused, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity, overlayNoticeSuccessColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeSuccessColor, '#10b981'), overlayNoticeFailureColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeFailureColor, '#f43f5e'), rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
       return;
     }
 
@@ -2965,7 +3160,9 @@ function startBackendServer() {
           method: 'POST',
           body: {
             keyword: 'Shelter Porter Robinson Madeon',
-            mode: 'normal'
+            mode: 'normal',
+            superChat: false,
+            superChatPrice: 30
           },
           modes: ['normal', 'top', 'interrupt', 'play_now'],
           aliases: {
@@ -2988,7 +3185,11 @@ function startBackendServer() {
 
       const body = await readJsonRequest(req);
       const keyword = normalizeLocalSongKeyword(body.keyword);
-      const mode = normalizeLocalSongRequestMode(body.mode);
+      const requestedMode = normalizeLocalSongRequestMode(body.mode);
+      const simulatesSuperChat = body.superChat === true;
+      const mode: LocalSongRequestMode | null = simulatesSuperChat
+        ? 'top'
+        : requestedMode;
       if (!keyword || !mode) {
         res.writeHead(400);
         res.end(JSON.stringify({
@@ -3006,15 +3207,19 @@ function startBackendServer() {
         .trim()
         .slice(0, 40) || '本地测试 API';
       writeLog(
-        `[本地测试 API] #${requestId} ${mode}: ${keyword}`,
-        'Cyan'
+        `[本地测试 API] #${requestId} ${simulatesSuperChat ? 'SC ' : ''}${mode}: ${keyword}`,
+        simulatesSuperChat ? 'Magenta' : 'Cyan'
       );
       const result = await serializeLocalTestRequest(
         () => tryRequestSong({
-          uid: 'local-test-api',
+          uid: `local-test-api-${requestId}`,
           name: requestedBy,
           avatar: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%236366f1%22/%3E%3Ctext x=%2232%22 y=%2241%22 text-anchor=%22middle%22 font-size=%2228%22 fill=%22white%22%3ET%3C/text%3E%3C/svg%3E',
-          guardLevel: 0
+          guardLevel: 0,
+          isSuperChat: simulatesSuperChat,
+          superChatPrice: simulatesSuperChat
+            ? Math.max(0, Number(body.superChatPrice) || 30)
+            : 0
         }, keyword, mode)
       );
       if (!result.success) {
@@ -3181,13 +3386,15 @@ function startBackendServer() {
         const previousHead = targetQueue[0] || null;
         const item = targetQueue.splice(index, 1)[0];
         if (item) {
-          targetQueue.unshift(item);
+          prependToPriorityQueue(targetQueue, item);
           await reconcileQueueHeadAfterMutation(previousHead, '置顶队列');
-          setGlobalStatus(`⬆️ 置顶: ${item.SongName}`);
+          setGlobalStatus(`⬆️ 置顶到优先队首: ${item.SongName}`);
         }
       } else if (action === 'play_now' && index >= 0 && index < targetQueue.length) {
         const item = targetQueue[index];
         if (item) {
+          isPlaying = true;
+          returnedCurrentQueueEntryId = '';
           const played = await playSongNow(item);
           if (played && targetQueue[index] === item) {
             targetQueue.splice(index, 1);
@@ -3203,19 +3410,49 @@ function startBackendServer() {
         setGlobalStatus('⏭️ 已切歌');
       } else if (action === 'reorder' && doc.from >= 0 && doc.from < targetQueue.length && doc.to >= 0 && doc.to < targetQueue.length) {
         const previousHead = targetQueue[0] || null;
-        const item = targetQueue.splice(doc.from, 1)[0];
-        if (item) {
-          targetQueue.splice(doc.to, 0, item);
+        const targetIndex = reorderWithinQueuePartition(targetQueue, doc.from, doc.to);
+        if (targetIndex >= 0) {
           await reconcileQueueHeadAfterMutation(previousHead, '重排队列');
           setGlobalStatus('🔄 列表已重排');
         }
       } else if (action === 'push_current_to_queue') {
         if (currentPlayingSong) {
-          targetQueue.push(currentPlayingSong); skipForcePlayOnce = true; setGlobalStatus('🔙 已退回点歌列表末端');
-          await requestPlayerNext();
+          const returnedSong = currentPlayingSong;
+          if (isPriorityQueueSong(returnedSong)) {
+            prependToPriorityQueue(targetQueue, returnedSong);
+          } else {
+            prependToNormalQueue(targetQueue, returnedSong);
+          }
+          currentPlayingSong = null;
+          isPlaying = false;
+          skipForcePlayOnce = false;
+          if (!returnedSong.QueueEntryId) {
+            returnedSong.QueueEntryId = `queue-${Date.now()}-${++queueEntrySequence}`;
+          }
+          returnedCurrentQueueEntryId = String(returnedSong.QueueEntryId);
+          registeredNextGuardKey = '';
+          registeredNextGuardSongIdentity = '';
+          queueHeadNeedsGuardOnlyAfterCurrentChange = false;
+          activeManagedPlayerAction = null;
+          await pauseActivePlayerForQueueReturn(returnedSong.SongName || '当前歌曲');
         }
+      } else if (action === 'pause_current') {
+        await controlCurrentPlayerPlayback('pause');
+      } else if (action === 'resume_current') {
+        await controlCurrentPlayerPlayback('resume');
+      } else if (action === 'replay_current') {
+        await replayCurrentRequestedSong();
       }
-      res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify({ success: true }));
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({
+        success: true,
+        queue: targetQueue,
+        current: currentPlayingSong || playerCurrentTrack,
+        currentIsRequested: Boolean(currentPlayingSong),
+        playing: isPlaying,
+        playerPausedAfterRequests,
+        playerPlaybackPaused
+      }));
       return;
     }
 
@@ -3231,11 +3468,28 @@ function startBackendServer() {
     if (url.pathname === '/api/state/toggle' && req.method === 'POST') { isAccepting = !isAccepting; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify({ success: true })); return; }
     if (url.pathname === '/api/state/toggle_play' && req.method === 'POST') {
       isPlaying = !isPlaying;
+      if (isPlaying && returnedCurrentQueueEntryId) {
+        const returnedIndex = targetQueue.findIndex(
+          song => song?.QueueEntryId === returnedCurrentQueueEntryId
+        );
+        if (returnedIndex >= 0 && isObservedSong(targetQueue[returnedIndex])) {
+          currentPlayingSong = targetQueue.splice(returnedIndex, 1)[0];
+        }
+        returnedCurrentQueueEntryId = '';
+        playerPausedAfterRequests = false;
+      }
       if (isPlaying && targetQueue[0]) {
         await guardNextSong(targetQueue[0]);
       }
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ success: true, playing: isPlaying }));
+      res.end(JSON.stringify({
+        success: true,
+        playing: isPlaying,
+        current: currentPlayingSong || playerCurrentTrack,
+        currentIsRequested: Boolean(currentPlayingSong),
+        playerPausedAfterRequests,
+        playerPlaybackPaused
+      }));
       return;
     }
 

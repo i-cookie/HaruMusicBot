@@ -4,7 +4,7 @@
   <img src="docs/images/haru-musicbot-1.1.6.png" alt="易点椿曲控制面板与 OBS 展示页面" width="100%">
 </p>
 
-易点椿曲基于“嗷呜点歌机”，是一款面向 Bilibili 主播的 Windows 弹幕点歌工具。1.2.2
+易点椿曲基于“嗷呜点歌机”，是一款面向 Bilibili 主播的 Windows 弹幕点歌工具。1.2.4
 开始支持网易云音乐、酷狗音乐、QQ 音乐和 Folia，并把各播放器的搜索、
 状态读取和控制实现拆成可独立更新的连接器。
 

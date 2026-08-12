@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 
 // ==========================================
 // 0. 环境检测
@@ -24,6 +24,7 @@ interface Theme {
 }
 
 interface SongInfo {
+    QueueEntryId?: string;
     Id: string;
     SongName: string;
     ArtistName: string;
@@ -32,6 +33,10 @@ interface SongInfo {
     CoverUrl?: string;
     OrderedBy: string;
     GuardLevel?: number;
+    QueuePriority?: 'priority' | 'normal';
+    IsPriorityRequest?: boolean;
+    IsSuperChat?: boolean;
+    SuperChatPrice?: number;
 }
 
 type RequestedSongArtwork = 'bili_avatar' | 'song_cover';
@@ -930,7 +935,7 @@ interface OverlayWidgetProps {
 }
 
 const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
-    const [data, setData] = useState<{ current: SongInfo | null; currentIsRequested: boolean; playerPausedAfterRequests: boolean; requestedSongArtwork: RequestedSongArtwork; queue: SongInfo[]; status: string }>({ current: null, currentIsRequested: false, playerPausedAfterRequests: false, requestedSongArtwork: 'bili_avatar', queue: [], status: '' });
+    const [data, setData] = useState<{ current: SongInfo | null; currentIsRequested: boolean; playerPausedAfterRequests: boolean; playerPlaybackPaused: boolean; requestedSongArtwork: RequestedSongArtwork; queue: SongInfo[]; status: string }>({ current: null, currentIsRequested: false, playerPausedAfterRequests: false, playerPlaybackPaused: false, requestedSongArtwork: 'bili_avatar', queue: [], status: '' });
     const [isConnected, setIsConnected] = useState<boolean>(true);
     const [isCdpConnected, setIsCdpConnected] = useState<boolean>(true);
     const [accepting, setAccepting] = useState<boolean>(true);
@@ -942,10 +947,49 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
     const [noticeFailureColor, setNoticeFailureColor] = useState(DEFAULT_NOTICE_FAILURE_COLOR);
     const [, setPrevQueue] = useState<SongInfo[]>([]);
     const [newItemsIds, setNewItemsIds] = useState<Set<string>>(new Set());
+    const queueItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+    const queueBeforeMutationRef = useRef<Map<string, DOMRect> | null>(null);
 
     const [dragInfo, setDragInfo] = useState<DragInfo | null>(null);
     const [showSettings, setShowSettings] = useState<boolean>(false);
     const [titleBarActionsOpen, setTitleBarActionsOpen] = useState<boolean>(false);
+
+    const getQueueItemKey = useCallback((song: SongInfo): string => (
+        song.QueueEntryId || `${song.Id}-${song.OrderedByUid}`
+    ), []);
+
+    const captureQueuePositions = useCallback(() => {
+        const positions = new Map<string, DOMRect>();
+        queueItemRefs.current.forEach((element, key) => {
+            positions.set(key, element.getBoundingClientRect());
+        });
+        queueBeforeMutationRef.current = positions;
+    }, []);
+
+    useLayoutEffect(() => {
+        const previousPositions = queueBeforeMutationRef.current;
+        if (!previousPositions) return;
+        queueBeforeMutationRef.current = null;
+
+        queueItemRefs.current.forEach((element, key) => {
+            const previous = previousPositions.get(key);
+            if (!previous) return;
+            const current = element.getBoundingClientRect();
+            const offsetX = previous.left - current.left;
+            const offsetY = previous.top - current.top;
+            if (Math.abs(offsetX) < 0.5 && Math.abs(offsetY) < 0.5) return;
+            element.animate(
+                [
+                    { transform: `translate3d(${offsetX}px, ${offsetY}px, 0)`, zIndex: '12' },
+                    { transform: 'translate3d(0, 0, 0)', zIndex: '12' }
+                ],
+                {
+                    duration: 360,
+                    easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+                }
+            );
+        });
+    }, [data.queue]);
 
     // ⭐ 新增: 全局 UI 500ms 冷却锁定
     const [actionLock, setActionLock] = useState<boolean>(false);
@@ -1081,15 +1125,15 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
 
                 const safeQueue: SongInfo[] = Array.isArray(json.queue) ? json.queue : [];
                 setPrevQueue(prev => {
-                    const prevIds = new Set(prev.map(s => `${s.Id}-${s.OrderedByUid}`));
-                    const currentIds = safeQueue.map(s => `${s.Id}-${s.OrderedByUid}`);
+                    const prevIds = new Set(prev.map(getQueueItemKey));
+                    const currentIds = safeQueue.map(getQueueItemKey);
                     const newIds = new Set<string>();
                     currentIds.forEach(id => { if (!prevIds.has(id)) newIds.add(id); });
                     if (newIds.size > 0) { setNewItemsIds(newIds); setTimeout(() => setNewItemsIds(new Set()), 1000); }
                     return safeQueue;
                 });
 
-                setData({ current: json.current || null, currentIsRequested: json.currentIsRequested === true, playerPausedAfterRequests: json.playerPausedAfterRequests === true, requestedSongArtwork: json.requestedSongArtwork === 'song_cover' ? 'song_cover' : 'bili_avatar', queue: safeQueue, status: json.status || '' });
+                setData({ current: json.current || null, currentIsRequested: json.currentIsRequested === true, playerPausedAfterRequests: json.playerPausedAfterRequests === true, playerPlaybackPaused: json.playerPlaybackPaused === true, requestedSongArtwork: json.requestedSongArtwork === 'song_cover' ? 'song_cover' : 'bili_avatar', queue: safeQueue, status: json.status || '' });
                 setAccepting(json.accepting ?? true);
                 setPlaying(json.playing ?? true);
                 setIsConnected(true);
@@ -1103,18 +1147,39 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
         fetchData();
         const timer = setInterval(fetchData, 1000);
         return () => clearInterval(timer);
-    }, []);
+    }, [getQueueItemKey]);
 
     const handleQueueAction = async (action: string, payload: any) => {
         // ⭐ 防抖保护
         if (!isElectron || actionLock) return;
+        if (action === 'delete') {
+            const song = data.queue?.[Number(payload?.index)];
+            const songLabel = song?.SongName ? `《${song.SongName}》` : '这首歌曲';
+            if (!window.confirm(`确定要从待播列表删除${songLabel}吗？`)) return;
+        }
+        if (action === 'reorder' || action === 'top') captureQueuePositions();
         triggerActionLock();
         try {
-            await fetch('http://localhost:5555/api/queue/action', {
+            const response = await fetch('http://localhost:5555/api/queue/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action, ...payload })
             });
+            const result = await response.json();
+            if (Array.isArray(result.queue)) {
+                setData(previous => ({
+                    ...previous,
+                    queue: result.queue,
+                    current: 'current' in result ? result.current : previous.current,
+                    currentIsRequested: typeof result.currentIsRequested === 'boolean' ? result.currentIsRequested : previous.currentIsRequested,
+                    playerPausedAfterRequests: typeof result.playerPausedAfterRequests === 'boolean' ? result.playerPausedAfterRequests : previous.playerPausedAfterRequests,
+                    playerPlaybackPaused: typeof result.playerPlaybackPaused === 'boolean' ? result.playerPlaybackPaused : previous.playerPlaybackPaused
+                }));
+                setPrevQueue(result.queue);
+            } else {
+                queueBeforeMutationRef.current = null;
+            }
+            if (typeof result.playing === 'boolean') setPlaying(result.playing);
         } catch(err) { console.error("操作失败", err); }
     };
 
@@ -1194,12 +1259,17 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
             } else {
                 if (type === 'queue') {
                     const items = Array.from(document.querySelectorAll('.queue-item'));
-                    let targetIndex = items.length - 1;
-                    for (let i = 0; i < items.length; i++) {
-                        const rect = items[i].getBoundingClientRect();
-                        if (ev.clientY < rect.top + rect.height / 2) { targetIndex = i; break; }
-                    }
-                    targetIndex = Math.max(0, targetIndex);
+                    let targetIndex = index;
+                    let nearestDistance = Number.POSITIVE_INFINITY;
+                    items.forEach((element, itemIndex) => {
+                        const rect = element.getBoundingClientRect();
+                        const centerY = rect.top + rect.height / 2;
+                        const distance = Math.abs(ev.clientY - centerY);
+                        if (distance < nearestDistance) {
+                            nearestDistance = distance;
+                            targetIndex = itemIndex;
+                        }
+                    });
                     if (targetIndex !== index) handleQueueAction('reorder', { from: index, to: targetIndex });
                 }
             }
@@ -1224,8 +1294,16 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
         e?.stopPropagation?.();
         triggerActionLock();
         try {
-            await fetch('http://localhost:5555/api/state/toggle_play', { method: 'POST' });
-            setPlaying(!playing);
+            const response = await fetch('http://localhost:5555/api/state/toggle_play', { method: 'POST' });
+            const result = await response.json();
+            if (typeof result.playing === 'boolean') setPlaying(result.playing);
+            setData(previous => ({
+                ...previous,
+                current: 'current' in result ? result.current : previous.current,
+                currentIsRequested: typeof result.currentIsRequested === 'boolean' ? result.currentIsRequested : previous.currentIsRequested,
+                playerPausedAfterRequests: typeof result.playerPausedAfterRequests === 'boolean' ? result.playerPausedAfterRequests : previous.playerPausedAfterRequests,
+                playerPlaybackPaused: typeof result.playerPlaybackPaused === 'boolean' ? result.playerPlaybackPaused : previous.playerPlaybackPaused
+            }));
         } catch(err) { console.error(err); }
     };
 
@@ -1397,7 +1475,7 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                         </div>
                     ) : dragInfo.actionType === 'push' ? (
                         <div className="w-full py-1 text-center font-bold text-white text-[15px] tracking-widest flex items-center justify-center gap-2">
-                            <span className="text-xl animate-pulse">🔙</span> 松开以退回队列
+                            <span className="text-xl animate-pulse">🔙</span> 松开以退回所属队首并暂停
                         </div>
                     ) : (
                         <>
@@ -1457,7 +1535,7 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                                 onClick={togglePlaying}
                                 disabled={actionLock}
                                 className={`flex items-center justify-center w-5 h-5 rounded-full transition-colors ${isElectron ? 'pointer-events-auto cursor-pointer no-drag' : 'pointer-events-none'} ${playing ? (isElectron ? 'bg-green-500/20 text-green-400 hover:bg-green-500/40' : 'bg-green-500/20 text-green-400') : (isElectron ? 'bg-red-500/20 text-red-400 hover:bg-red-500/40' : 'bg-red-500/20 text-red-400')} ${actionLock ? 'opacity-50 pointer-events-none' : ''}`}
-                                title={isElectron ? (playing ? '点击暂停自动播放' : '点击开启自动播放') : undefined}
+                                title={isElectron ? (playing ? '点击暂停自动连播' : '点击开启自动连播') : undefined}
                             >
                                 <span className="text-[10px] leading-none">{playing ? '🟢' : '🔴'}</span>
                             </button>
@@ -1501,16 +1579,18 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                             <div className="absolute right-[-10px] top-[-10px] opacity-5 text-7xl select-none pointer-events-none">{data.currentIsRequested ? '✨' : '🎵'}</div>
                             {data.currentIsRequested ? (
                                 <div className={`w-12 h-12 ${data.requestedSongArtwork === 'song_cover' ? 'rounded-lg' : 'rounded-full'} overflow-hidden border-[3px] ${playing ? (data.requestedSongArtwork === 'song_cover' ? 'border-green-400/60 shadow-[0_0_15px_rgba(74,222,128,0.25)]' : getGuardStyle(data.current.GuardLevel).border || 'border-green-400/60 shadow-[0_0_15px_rgba(74,222,128,0.2)]') : 'border-yellow-400/60 shadow-[0_0_15px_rgba(250,204,21,0.2)]'} bg-slate-800 flex items-center justify-center shrink-0 relative pointer-events-none`}>
-                                    <SongArtworkImage song={data.current} source={data.requestedSongArtwork === 'song_cover' ? 'cover' : 'avatar'} className={!playing ? 'grayscale opacity-80' : ''} />
+                                    <SongArtworkImage song={data.current} source={data.requestedSongArtwork === 'song_cover' ? 'cover' : 'avatar'} className={!playing || data.playerPlaybackPaused ? 'grayscale opacity-80' : ''} />
                                 </div>
                             ) : (
                                 <div className="w-12 h-12 rounded-lg overflow-hidden border-[3px] border-sky-300/35 bg-sky-950/60 shadow-[0_0_14px_rgba(125,211,252,0.16)] flex items-center justify-center text-sky-200 shrink-0 relative pointer-events-none">
                                     <SongArtworkImage song={data.current} source="cover" />
                                 </div>
                             )}
-                            <div className="flex flex-col min-w-0 pointer-events-none">
+                            <div className="flex flex-col min-w-0 flex-1 pointer-events-none">
                                 {!playing ? (
-                                    <div className="text-yellow-400 text-[10px] font-bold mb-1 tracking-wider flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span> 自动播放已暂停</div>
+                                    <div className="text-yellow-400 text-[10px] font-bold mb-1 tracking-wider flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span> {data.playerPlaybackPaused ? '自动连播与播放器已暂停' : '自动连播已暂停'}</div>
+                                ) : data.playerPlaybackPaused ? (
+                                    <div className="text-yellow-400 text-[10px] font-bold mb-1 tracking-wider flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span> 播放器已暂停</div>
                                 ) : data.currentIsRequested ? (
                                     <div className="text-green-400 text-[10px] font-bold mb-1 tracking-wider flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.9)]"></span> 点歌播放中</div>
                                 ) : data.playerPausedAfterRequests ? (
@@ -1529,6 +1609,33 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                                     </div>
                                 )}
                             </div>
+                            {isElectron && (
+                                <div className="no-drag relative z-20 flex shrink-0 items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onPointerDown={e => e.stopPropagation()}
+                                        onClick={e => {
+                                            e.stopPropagation();
+                                            handleQueueAction(data.playerPlaybackPaused ? 'resume_current' : 'pause_current', {});
+                                        }}
+                                        className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 bg-black/30 text-sm text-white/90 transition-colors hover:bg-white/15 disabled:opacity-40"
+                                        disabled={actionLock}
+                                        title={data.playerPlaybackPaused ? '继续播放' : '暂停播放'}
+                                    >
+                                        {data.playerPlaybackPaused ? '▶️' : '⏸️'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onPointerDown={e => e.stopPropagation()}
+                                        onClick={e => { e.stopPropagation(); handleQueueAction('replay_current', {}); }}
+                                        className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 bg-black/30 text-sm text-white/90 transition-colors hover:bg-white/15 disabled:opacity-40"
+                                        disabled={actionLock || !data.currentIsRequested}
+                                        title={data.currentIsRequested ? '从头重播当前用户点歌' : '当前不是用户点歌，无法重播'}
+                                    >
+                                        🔁
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="current-zone glass-card rounded-xl p-4 flex flex-col items-center justify-center border-dashed border-white/20 shrink-0 min-h-[110px] relative overflow-hidden">
@@ -1536,8 +1643,8 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                                 <>
                                     <div className="absolute inset-0 bg-yellow-500/10 animate-[pulse_3s_infinite] pointer-events-none"></div>
                                     <div className="text-4xl mb-2 opacity-90 drop-shadow-[0_0_15px_rgba(250,204,21,0.6)] pointer-events-none z-10 animate-bounce">⏸️</div>
-                                    <div className="text-sm font-bold tracking-wide pointer-events-none z-10 text-yellow-400 drop-shadow-md">自动播放已暂停</div>
-                                    <div className="text-[10px] mt-1 font-medium pointer-events-none z-10 opacity-70" style={{ color: theme.subTextColor }}>队列歌曲将被保留并跳过</div>
+                                    <div className="text-sm font-bold tracking-wide pointer-events-none z-10 text-yellow-400 drop-shadow-md">自动连播已暂停</div>
+                                    <div className="text-[10px] mt-1 font-medium pointer-events-none z-10 opacity-70" style={{ color: theme.subTextColor }}>队列歌曲会保留，恢复后继续衔接</div>
                                 </>
                             ) : !isCdpConnected ? (
                                 <>
@@ -1613,39 +1720,49 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                         )}
 
                         {data.queue?.map((song, index) => {
-                            const uniqueKey = `${song.Id}-${song.OrderedByUid}-${index}`;
-                            const isNew = newItemsIds.has(`${song.Id}-${song.OrderedByUid}`);
+                            const uniqueKey = getQueueItemKey(song);
+                            const isNew = newItemsIds.has(uniqueKey);
                             const itemGuardStyle = getGuardStyle(song.GuardLevel);
+                            const isPriority = song.QueuePriority === 'priority'
+                                || song.IsPriorityRequest === true
+                                || song.IsSuperChat === true;
 
                             return (
                                 <div
                                     key={uniqueKey}
+                                    ref={element => {
+                                        if (element) queueItemRefs.current.set(uniqueKey, element);
+                                        else queueItemRefs.current.delete(uniqueKey);
+                                    }}
                                     style={{ touchAction: 'none' }}
                                     onPointerDown={isElectron && !actionLock ? (e) => handlePointerDown(e, 'queue', index, song) : undefined}
-                                    className={`${isElectron ? 'no-drag cursor-move' : ''} queue-item glass-card rounded-lg flex items-center gap-3 transition-all hover:bg-white/10 relative group/item ${isNew ? 'animate-slide-in' : ''} ${dragInfo?.type === 'queue' && dragInfo.index === index ? 'opacity-30' : ''} ${theme.compactQueue ? 'p-1.5' : 'p-2.5'} ${actionLock ? 'pointer-events-none' : ''}`}
+                                    className={`${isElectron ? 'no-drag cursor-move' : ''} queue-item glass-card rounded-lg flex items-center gap-3 transition-all relative group/item ${isPriority ? 'border border-amber-300/60 !bg-amber-500/25 shadow-[inset_5px_0_0_rgba(251,191,36,.95),0_0_0_1px_rgba(251,191,36,.12),0_5px_18px_rgba(245,158,11,.22)] hover:!bg-amber-500/35' : 'hover:bg-white/10'} ${isNew ? 'animate-slide-in' : ''} ${dragInfo?.type === 'queue' && dragInfo.index === index ? 'opacity-30' : ''} ${theme.compactQueue ? 'p-1.5' : 'p-2.5'} ${actionLock ? 'pointer-events-none' : ''}`}
                                 >
+                                    {isPriority && <div className="pointer-events-none absolute inset-0 rounded-lg bg-gradient-to-r from-amber-300/20 via-orange-400/10 to-rose-400/10"></div>}
                                     {theme.compactQueue ? (
-                                        <div className="flex items-center w-full min-w-0 pointer-events-none pr-14">
-                                            <div className="text-[10px] font-bold w-4 text-center shrink-0 mr-1" style={{ color: theme.subTextColor }}>{index + 1}</div>
+                                        <div className="relative z-10 flex items-center w-full min-w-0 pointer-events-none pr-14">
+                                            <div className={`text-[10px] font-bold w-4 text-center shrink-0 mr-1 ${isPriority ? 'text-amber-100' : ''}`} style={isPriority ? undefined : { color: theme.subTextColor }}>{index + 1}</div>
                                             <div className="text-[12px] font-bold truncate text-white max-w-[55%] shrink-0 pr-1">{song.SongName}</div>
-                                            <div className="text-[10px] truncate flex items-center gap-1 opacity-80 min-w-0" style={{ color: theme.subTextColor }}>
+                                            <div className="text-[10px] truncate flex items-center gap-1 opacity-90 min-w-0" style={{ color: isPriority ? '#fef3c7' : theme.subTextColor }}>
                                                 <span className="truncate">- {song.OrderedBy}</span>
+                                                {isPriority && <span className="shrink-0 rounded-sm border border-amber-200/70 bg-amber-300/25 px-1 text-[8px] font-bold leading-none text-amber-50 shadow-sm">⚡ 优先</span>}
                                                 {itemGuardStyle.label && <span className={`text-[8px] px-1 rounded-sm font-bold tracking-wider leading-none shrink-0 ${itemGuardStyle.tag}`}>{itemGuardStyle.label}</span>}
                                             </div>
                                         </div>
                                     ) : (
                                         <>
-                                            <div className="text-[11px] font-bold w-4 text-center shrink-0 pointer-events-none" style={{ color: theme.subTextColor }}>{index + 1}</div>
-                                            <div className={`w-8 h-8 ${data.requestedSongArtwork === 'song_cover' ? 'rounded-md' : 'rounded-full'} overflow-hidden shrink-0 bg-black/30 border-2 ${data.requestedSongArtwork === 'song_cover' ? 'border-green-400/30' : (itemGuardStyle.label ? itemGuardStyle.border : 'border-white/10')} flex items-center justify-center pointer-events-none`}>
+                                            <div className={`relative z-10 text-[11px] font-bold w-4 text-center shrink-0 pointer-events-none ${isPriority ? 'text-amber-100' : ''}`} style={isPriority ? undefined : { color: theme.subTextColor }}>{index + 1}</div>
+                                            <div className={`relative z-10 w-8 h-8 ${data.requestedSongArtwork === 'song_cover' ? 'rounded-md' : 'rounded-full'} overflow-hidden shrink-0 bg-black/30 border-2 ${isPriority ? 'border-amber-200/75 shadow-[0_0_10px_rgba(251,191,36,.4)]' : data.requestedSongArtwork === 'song_cover' ? 'border-green-400/30' : (itemGuardStyle.label ? itemGuardStyle.border : 'border-white/10')} flex items-center justify-center pointer-events-none`}>
                                                 <SongArtworkImage song={song} source={data.requestedSongArtwork === 'song_cover' ? 'cover' : 'avatar'} />
                                             </div>
-                                            <div className="flex flex-col min-w-0 flex-1 pointer-events-none">
+                                            <div className="relative z-10 flex flex-col min-w-0 flex-1 pointer-events-none">
                                                 <div className="text-[13px] font-bold truncate drop-shadow-sm pr-16" style={{ color: theme.textColor }}>{song.SongName}</div>
                                                 <div className="text-[11px] truncate flex items-center gap-1.5 mt-0.5" style={{ color: theme.subTextColor }}>
                                                     <span>{song.ArtistName}</span>
                                                     <span className="w-0.5 h-0.5 bg-white/30 rounded-full"></span>
                                                     <span className="truncate flex items-center gap-1" style={{ color: theme.titleColor, opacity: 0.8 }}>
                                                         {song.OrderedBy}
+                                                        {isPriority && <span className="rounded-[3px] border border-amber-200/70 bg-amber-300/25 px-1 py-0.5 text-[8px] font-bold leading-none text-amber-50 shadow-sm">⚡ 优先</span>}
                                                         {itemGuardStyle.label && <span className={`text-[8px] px-1 py-0.5 rounded-[2px] font-bold tracking-wider leading-none shadow-sm ${itemGuardStyle.tag}`}>{itemGuardStyle.label}</span>}
                                                     </span>
                                                 </div>
@@ -1655,7 +1772,7 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
 
                                     {isElectron && (
                                         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity bg-black/60 p-1 rounded-md backdrop-blur-md border border-white/10 z-20">
-                                            <button onPointerDown={e => { e.stopPropagation(); handleQueueAction('top', { index }); }} className="p-1 hover:bg-white/20 rounded text-xs transition-colors" title="置顶/优先播放">⬆️</button>
+                                            <button onPointerDown={e => { e.stopPropagation(); handleQueueAction('top', { index }); }} className="p-1 hover:bg-white/20 rounded text-xs transition-colors" title="移到优先队列队头">⬆️</button>
                                             <button onPointerDown={e => { e.stopPropagation(); handleQueueAction('play_now', { index }); }} className="p-1 hover:bg-white/20 rounded text-xs transition-colors" title="无视顺序，强行立即切歌播放">▶️</button>
                                             <button onPointerDown={e => { e.stopPropagation(); handleQueueAction('delete', { index }); }} className="p-1 hover:bg-red-500/40 rounded text-xs transition-colors text-red-400" title="移出点歌队列">🗑️</button>
                                         </div>
@@ -2462,26 +2579,59 @@ const AdminWidget: React.FC = () => {
 
     const togglePlaying = async () => {
         try {
-            await fetch('http://localhost:5555/api/state/toggle_play', { method: 'POST' });
-            setConfig((prev: any) => ({...prev, playing: !prev.playing}));
+            const response = await fetch('http://localhost:5555/api/state/toggle_play', { method: 'POST' });
+            const result = await response.json();
+            if (typeof result.playing === 'boolean') {
+                setConfig((prev: any) => ({...prev, playing: result.playing}));
+            }
         } catch(err) { console.error(err); }
     };
 
     const handleDebugInsert = async () => {
-        if(!debugInput.trim()) return showAdminToast("❌ 请输入需要搜索并插入的歌曲名！");
+        if(!debugInput.trim()) return showAdminToast("❌ 请输入要模拟普通点歌的歌曲名！");
         try {
-            const res = await fetch('http://localhost:5555/api/debug/insert_next', {
+            const res = await fetch('http://localhost:5555/api/test/request-song', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ keyword: debugInput })
+                body: JSON.stringify({
+                    keyword: debugInput,
+                    mode: 'normal',
+                    superChat: false,
+                    requestedBy: '模拟普通弹幕用户'
+                })
             });
             const json = await res.json();
             if(json.success) {
-                showAdminToast("✅ 搜索并插入成功！请前往播放列表查看。");
+                showAdminToast(`✅ 模拟普通点歌成功：${json.song?.SongName || debugInput}`);
             } else {
-                showAdminToast("❌ 操作失败。可能是没搜到歌曲，请查看运行日志。");
+                showAdminToast(`❌ ${json.message || '模拟普通点歌失败'}`);
             }
         } catch(err: any) { showAdminToast("❌ 请求后端失败：" + err.message); }
+    };
+
+    const handleDebugSuperChatRequest = async () => {
+        if (!debugInput.trim()) return showAdminToast('❌ 请输入要模拟 SC 点歌的歌曲名！');
+        try {
+            const res = await fetch('http://localhost:5555/api/test/request-song', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    keyword: debugInput,
+                    mode: 'top',
+                    superChat: true,
+                    superChatPrice: 30,
+                    requestedBy: '模拟 SC 用户'
+                })
+            });
+            const json = await res.json();
+            if (json.success) {
+                showAdminToast(`💗 模拟 SC 点歌成功：${json.song?.SongName || debugInput}`);
+            } else {
+                showAdminToast(`❌ ${json.message || '模拟 SC 点歌失败'}`);
+            }
+        } catch (err: any) {
+            showAdminToast('❌ 请求后端失败：' + err.message);
+        }
     };
 
     // ⭐ 增加了错误状态识别 and Toast 拦截提示
@@ -2864,7 +3014,7 @@ const AdminWidget: React.FC = () => {
 
                                             <div className="bg-white/5 p-5 rounded-xl border border-white/10 flex justify-between items-center">
                                                 <div>
-                                                    <div className="text-sm text-gray-400 mb-2">自动播放状态</div>
+                                                    <div className="text-sm text-gray-400 mb-2">自动连播状态</div>
                                                     <div className="text-2xl font-bold flex items-center gap-3 mt-1">
                                                         {config.playing ? <><span className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span> <span className="text-blue-400">播放中</span></> : <><span className="w-3 h-3 rounded-full bg-gray-500 shadow-[0_0_8px_rgba(107,114,128,0.8)]"></span> <span className="text-gray-400">已暂停</span></>}
                                                     </div>
@@ -3117,7 +3267,7 @@ const AdminWidget: React.FC = () => {
                                     <h2 className="text-2xl font-bold text-white mb-2">调试与测试</h2>
 
                                     <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
-                                        <h3 className="text-sm font-bold text-purple-400 mb-4 uppercase tracking-wider">🛠️ 测试一：搜索并加入播放列表</h3>
+                                        <h3 className="text-sm font-bold text-purple-400 mb-4 uppercase tracking-wider">🛠️ 测试一：模拟普通弹幕点歌</h3>
                                         <div className="flex gap-3 mb-3">
                                             <input
                                                 type="text"
@@ -3127,9 +3277,20 @@ const AdminWidget: React.FC = () => {
                                                 placeholder="输入要搜索的歌曲名称"
                                                 onKeyDown={e => e.key === 'Enter' && handleDebugInsert()}
                                             />
-                                            <button onClick={handleDebugInsert} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg font-bold transition-colors shadow-lg">发送到播放器</button>
+                                            <button onClick={handleDebugInsert} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg font-bold transition-colors shadow-lg">加入普通队列</button>
                                         </div>
-                                        <p className="text-xs text-gray-500 mb-8 leading-relaxed">此操作会使用当前选中播放器自己的搜索接口；Folia 使用 Stage 搜索接口，其余播放器使用各自适配器，并登记下一首守卫。</p>
+                                        <p className="text-xs text-gray-500 mb-6 leading-relaxed">模拟一名普通观众发送点歌弹幕，完整经过歌曲搜索和点歌处理，并将歌曲加入待播列表的普通队列。</p>
+
+                                        <div className="mb-8 rounded-xl border border-pink-400/20 bg-pink-500/[0.06] p-4">
+                                            <div className="mb-2 flex items-center justify-between gap-3">
+                                                <h3 className="text-sm font-bold text-pink-300 uppercase tracking-wider">💗 模拟 SC 点歌</h3>
+                                                <span className="rounded-full border border-pink-300/20 bg-pink-400/10 px-2 py-1 text-[10px] font-bold text-pink-200">优先队列 FIFO</span>
+                                            </div>
+                                            <p className="mb-3 text-xs leading-relaxed text-gray-500">使用上方歌名模拟一条 30 元醒目留言点歌。连续模拟时，后来歌曲会追加到优先队列末尾，可用于检查优先卡片、合并排名和成功通知。</p>
+                                            <button onClick={handleDebugSuperChatRequest} className="w-full rounded-lg border border-pink-300/25 bg-pink-600 px-6 py-3 text-sm font-bold text-white shadow-lg transition-colors hover:bg-pink-500">
+                                                模拟 SC 点歌并加入优先队列
+                                            </button>
+                                        </div>
 
                                         <h3 className="text-sm font-bold text-blue-400 mb-4 uppercase tracking-wider">🛠️ 测试二：模拟切歌指令</h3>
                                         <button onClick={handleDebugPlayNext} className="w-full px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg font-bold transition-colors shadow-lg flex justify-center items-center gap-2">
@@ -3435,7 +3596,7 @@ const AdminWidget: React.FC = () => {
                                         <div className="border-b border-white/10 pb-3">
                                             <h3 className="text-sm font-bold text-violet-200">点歌冷却</h3>
                                             <p className="mt-1 text-[11px] text-gray-500">分别设置不同身份用户的请求间隔，单位为秒。</p>
-                                            <p className="mt-1 text-[11px] text-pink-300/80">醒目留言中以“点歌”或“點歌”开头的内容会按 SC 点歌处理，并置顶到待播队首。</p>
+                                            <p className="mt-1 text-[11px] text-pink-300/80">醒目留言中以“点歌”或“點歌”开头的内容会加入优先队列末尾；优先队列整体先于普通队列播放。</p>
                                         </div>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                             {[

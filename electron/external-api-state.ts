@@ -1,4 +1,5 @@
 export interface ExternalSong {
+  queueEntryId: string;
   id: string;
   title: string;
   artist: string;
@@ -8,6 +9,8 @@ export interface ExternalSong {
   requestedByUid: string;
   requestedByAvatar: string;
   guardLevel: number;
+  priority: boolean;
+  superChat: boolean;
 }
 
 export interface ExternalPlayerState {
@@ -80,6 +83,7 @@ export function sanitizeExternalSong(song: unknown): ExternalSong | null {
   const source = song as SongRecord;
   const guardLevel = Number(source.GuardLevel);
   return {
+    queueEntryId: textField(source, 'QueueEntryId'),
     id: textField(source, 'Id'),
     title: textField(source, 'SongName'),
     artist: textField(source, 'ArtistName'),
@@ -88,7 +92,11 @@ export function sanitizeExternalSong(song: unknown): ExternalSong | null {
     requestedBy: textField(source, 'OrderedBy'),
     requestedByUid: textField(source, 'OrderedByUid'),
     requestedByAvatar: textField(source, 'OrderedByAvatar'),
-    guardLevel: Number.isFinite(guardLevel) ? guardLevel : 0
+    guardLevel: Number.isFinite(guardLevel) ? guardLevel : 0,
+    priority: source.QueuePriority === 'priority'
+      || source.IsPriorityRequest === true
+      || source.IsSuperChat === true,
+    superChat: source.IsSuperChat === true
   };
 }
 

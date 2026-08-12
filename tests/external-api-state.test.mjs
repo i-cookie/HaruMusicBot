@@ -56,6 +56,7 @@ test('sanitizes malformed optional song fields without leaking native data', () 
   });
 
   assert.deepEqual(song, {
+    queueEntryId: '',
     id: '0',
     title: '',
     artist: 'Artist',
@@ -64,7 +65,9 @@ test('sanitizes malformed optional song fields without leaking native data', () 
     requestedBy: '',
     requestedByUid: '',
     requestedByAvatar: '',
-    guardLevel: 0
+    guardLevel: 0,
+    priority: false,
+    superChat: false
   });
   assert.equal(Object.hasOwn(song || {}, 'NativeData'), false);
   assert.equal(Object.hasOwn(song || {}, 'unexpected'), false);

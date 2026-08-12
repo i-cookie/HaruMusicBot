@@ -203,6 +203,14 @@ export function shouldDeferManagedTrackObservation(
     && !tracksRepresentSameSong(target, observed);
 }
 
+export function shouldPreserveQueueDuringManagedReplay(
+  kind: string,
+  target: QueueSongLike | null | undefined,
+  observed: QueueSongLike | null | undefined
+): boolean {
+  return kind === 'replay' && tracksRepresentSameSong(target, observed);
+}
+
 export function shouldPreserveGuardAfterImmediate(options: {
   command: ImmediatePlaybackCommand;
   hadRegisteredGuard: boolean;

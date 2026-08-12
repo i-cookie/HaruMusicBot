@@ -6,6 +6,7 @@ import {
   planQueueHeadMutation,
   queueSongIdentity,
   shouldDeferManagedTrackObservation,
+  shouldPreserveQueueDuringManagedReplay,
   shouldPreserveGuardAfterImmediate,
   shouldRepairObservedNext,
   tracksHaveDifferentStableIds,
@@ -263,6 +264,35 @@ test('managed previous-track transition is deferred until the final target', () 
     title: 'Mirror',
     artist: 'Porter Robinson'
   }), false);
+});
+
+test('managed replay never consumes a duplicate queued request for the same song', () => {
+  const playingRequest = {
+    QueueEntryId: 'playing-request',
+    Id: '80605719',
+    SongName: 'Mirror',
+    ArtistName: 'Porter Robinson',
+    OrderedByUid: 'same-user'
+  };
+  const duplicateQueuedRequest = {
+    ...playingRequest,
+    QueueEntryId: 'queued-request'
+  };
+
+  assert.equal(shouldPreserveQueueDuringManagedReplay(
+    'replay',
+    playingRequest,
+    duplicateQueuedRequest
+  ), true);
+  assert.notEqual(
+    playingRequest.QueueEntryId,
+    duplicateQueuedRequest.QueueEntryId
+  );
+  assert.equal(shouldPreserveQueueDuringManagedReplay(
+    'play-now',
+    playingRequest,
+    duplicateQueuedRequest
+  ), false);
 });
 
 test('QQ interrupt always preserves the displaced current song as guard', () => {
