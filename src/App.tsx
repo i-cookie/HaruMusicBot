@@ -120,6 +120,35 @@ interface BannerNotice extends OverlayNotice {
     phase: 'visible' | 'leaving';
 }
 
+const DEFAULT_NOTICE_SUCCESS_COLOR = '#10b981';
+const DEFAULT_NOTICE_FAILURE_COLOR = '#f43f5e';
+
+const normalizeHexColor = (value: unknown, fallback: string): string => (
+    typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+        ? value.toLowerCase()
+        : fallback
+);
+
+const hexColorToRgb = (hex: string): [number, number, number] => {
+    const normalized = normalizeHexColor(hex, '#000000');
+    return [
+        parseInt(normalized.slice(1, 3), 16),
+        parseInt(normalized.slice(3, 5), 16),
+        parseInt(normalized.slice(5, 7), 16)
+    ];
+};
+
+const rgbToHexColor = (red: number, green: number, blue: number): string => (
+    `#${[red, green, blue]
+        .map(channel => Math.min(255, Math.max(0, Math.round(channel))).toString(16).padStart(2, '0'))
+        .join('')}`
+);
+
+const colorWithAlpha = (hex: string, alpha: number): string => {
+    const [red, green, blue] = hexColorToRgb(hex);
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+};
+
 interface DragInfo {
     type: 'current' | 'queue';
     index: number;
@@ -486,6 +515,8 @@ const SuccessBannerOverlay: React.FC = () => {
     const bannerWidthPxRef = useRef<number>(720);
     const bannerThemeRef = useRef<'light' | 'dark'>('dark');
     const bannerOpacityRef = useRef<number>(0.94);
+    const bannerSuccessColorRef = useRef<string>(DEFAULT_NOTICE_SUCCESS_COLOR);
+    const bannerFailureColorRef = useRef<string>(DEFAULT_NOTICE_FAILURE_COLOR);
     const lastSuccessIdRef = useRef<number>(0);
     const lastRejectIdRef = useRef<number>(0);
     const exitTimerRefs = useRef<Map<number, number>>(new Map());
@@ -538,6 +569,14 @@ const SuccessBannerOverlay: React.FC = () => {
                 bannerOpacityRef.current = Number.isFinite(nextOpacity) && nextOpacity >= 0
                     ? Math.min(1, nextOpacity)
                     : 0.94;
+                bannerSuccessColorRef.current = normalizeHexColor(
+                    json.overlayNoticeSuccessColor,
+                    DEFAULT_NOTICE_SUCCESS_COLOR
+                );
+                bannerFailureColorRef.current = normalizeHexColor(
+                    json.overlayNoticeFailureColor,
+                    DEFAULT_NOTICE_FAILURE_COLOR
+                );
                 const successes: OverlayNotice[] = Array.isArray(json.successes) ? json.successes : [];
                 const rejects: OverlayNotice[] = Array.isArray(json.rejects) ? json.rejects : [];
                 const incoming = [
@@ -590,35 +629,25 @@ const SuccessBannerOverlay: React.FC = () => {
                         const isLightTheme = bannerThemeRef.current === 'light';
                         const alpha = Math.min(1, Math.max(0, bannerOpacityRef.current));
                         const isSuccess = notice.kind === 'success';
+                        const accentColor = isSuccess
+                            ? bannerSuccessColorRef.current
+                            : bannerFailureColorRef.current;
                         const containerStyle = isLightTheme
                             ? {
                                 background: `rgba(255, 255, 255, ${alpha})`,
-                                borderColor: isSuccess
-                                    ? `rgba(16, 185, 129, ${0.34 + alpha * 0.46})`
-                                    : `rgba(244, 63, 94, ${0.34 + alpha * 0.46})`,
-                                boxShadow: isSuccess
-                                    ? `0 14px 34px rgba(5, 150, 105, ${alpha * 0.2}), 0 3px 10px rgba(15, 23, 42, ${alpha * 0.08})`
-                                    : `0 14px 34px rgba(225, 29, 72, ${alpha * 0.2}), 0 3px 10px rgba(15, 23, 42, ${alpha * 0.08})`,
+                                borderColor: colorWithAlpha(accentColor, 0.34 + alpha * 0.46),
+                                boxShadow: `0 14px 34px ${colorWithAlpha(accentColor, alpha * 0.2)}, 0 3px 10px rgba(15, 23, 42, ${alpha * 0.08})`,
                                 color: '#111827'
                             }
                             : {
-                                background: isSuccess
-                                    ? `linear-gradient(135deg, rgba(6, 31, 25, ${alpha}), rgba(15, 23, 42, ${alpha * 0.98}))`
-                                    : `linear-gradient(135deg, rgba(48, 12, 22, ${alpha}), rgba(15, 23, 42, ${alpha * 0.98}))`,
-                                borderColor: isSuccess
-                                    ? `rgba(52, 211, 153, ${0.34 + alpha * 0.46})`
-                                    : `rgba(251, 113, 133, ${0.34 + alpha * 0.46})`,
+                                background: `linear-gradient(135deg, rgba(17, 24, 39, ${alpha}), rgba(15, 23, 42, ${alpha}))`,
+                                borderColor: colorWithAlpha(accentColor, 0.34 + alpha * 0.46),
                                 boxShadow: `0 16px 38px rgba(0, 0, 0, ${alpha * 0.46})`,
                                 color: '#ffffff'
                             };
-                        const accentColor = isSuccess ? '#10b981' : '#f43f5e';
-                        const accentSoftColor = isSuccess
-                            ? (isLightTheme ? 'rgba(16, 185, 129, 0.12)' : 'rgba(52, 211, 153, 0.16)')
-                            : (isLightTheme ? 'rgba(244, 63, 94, 0.12)' : 'rgba(251, 113, 133, 0.16)');
+                        const accentSoftColor = colorWithAlpha(accentColor, isLightTheme ? 0.12 : 0.16);
                         const accentRailStyle = {
-                            background: isSuccess
-                                ? 'linear-gradient(180deg, #34d399, #059669)'
-                                : 'linear-gradient(180deg, #fb7185, #e11d48)',
+                            background: `linear-gradient(180deg, ${colorWithAlpha(accentColor, 0.78)}, ${accentColor})`,
                             opacity: 1
                         };
                         const avatarFrameStyle = {
@@ -629,9 +658,7 @@ const SuccessBannerOverlay: React.FC = () => {
                             boxShadow: isLightTheme ? '0 3px 10px rgba(15, 23, 42, 0.12)' : '0 3px 12px rgba(0, 0, 0, 0.3)'
                         };
                         const statusBadgeStyle = {
-                            color: isSuccess
-                                ? (isLightTheme ? '#047857' : '#a7f3d0')
-                                : (isLightTheme ? '#be123c' : '#fecdd3'),
+                            color: isLightTheme ? accentColor : '#ffffff',
                             backgroundColor: accentSoftColor
                         };
                         const queueBadgeStyle = {
@@ -737,6 +764,70 @@ interface BoundedRangeProps {
     onEditingChange: (editing: boolean) => void;
     disabled?: boolean;
 }
+
+interface NoticeColorPickerProps {
+    label: string;
+    description: string;
+    value: string;
+    fallback: string;
+    onChange: (value: string) => void;
+}
+
+const NoticeColorPicker: React.FC<NoticeColorPickerProps> = ({
+    label,
+    description,
+    value,
+    fallback,
+    onChange
+}) => {
+    const normalized = normalizeHexColor(value, fallback);
+    const channels = hexColorToRgb(normalized);
+    const updateChannel = (index: number, rawValue: string) => {
+        const nextChannels: [number, number, number] = [...channels];
+        nextChannels[index] = Math.min(255, Math.max(0, Number(rawValue) || 0));
+        onChange(rgbToHexColor(...nextChannels));
+    };
+
+    return (
+        <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                    <label className="block text-sm font-semibold text-white">{label}</label>
+                    <span className="mt-1 block text-[11px] leading-relaxed text-gray-500">{description}</span>
+                </div>
+                <label
+                    className="relative h-11 w-16 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-white/15 shadow-inner"
+                    style={{ backgroundColor: normalized }}
+                    title={`打开 ${label} RGB 调色板`}
+                >
+                    <input
+                        type="color"
+                        aria-label={`${label} RGB 调色板`}
+                        value={normalized}
+                        onChange={event => onChange(event.target.value)}
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    />
+                </label>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+                {(['R', 'G', 'B'] as const).map((channel, index) => (
+                    <label key={channel} className="rounded-lg border border-white/[0.07] bg-black/25 px-2.5 py-2">
+                        <span className="mb-1 block text-[10px] font-bold text-gray-500">{channel}</span>
+                        <input
+                            type="number"
+                            min="0"
+                            max="255"
+                            value={channels[index]}
+                            onChange={event => updateChannel(index, event.target.value)}
+                            className="w-full bg-transparent text-sm font-mono text-white outline-none"
+                        />
+                    </label>
+                ))}
+            </div>
+            <div className="mt-2 text-right font-mono text-[10px] uppercase text-gray-500">{normalized}</div>
+        </div>
+    );
+};
 
 const BoundedRange: React.FC<BoundedRangeProps> = ({
     label,
@@ -847,6 +938,8 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
 
     const [successes, setSuccesses] = useState<OverlayNotice[]>([]);
     const [rejects, setRejects] = useState<OverlayNotice[]>([]);
+    const [noticeSuccessColor, setNoticeSuccessColor] = useState(DEFAULT_NOTICE_SUCCESS_COLOR);
+    const [noticeFailureColor, setNoticeFailureColor] = useState(DEFAULT_NOTICE_FAILURE_COLOR);
     const [, setPrevQueue] = useState<SongInfo[]>([]);
     const [newItemsIds, setNewItemsIds] = useState<Set<string>>(new Set());
 
@@ -983,6 +1076,8 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
 
                 setSuccesses(json.successes || []);
                 setRejects(json.rejects || []);
+                setNoticeSuccessColor(normalizeHexColor(json.overlayNoticeSuccessColor, DEFAULT_NOTICE_SUCCESS_COLOR));
+                setNoticeFailureColor(normalizeHexColor(json.overlayNoticeFailureColor, DEFAULT_NOTICE_FAILURE_COLOR));
 
                 const safeQueue: SongInfo[] = Array.isArray(json.queue) ? json.queue : [];
                 setPrevQueue(prev => {
@@ -1485,26 +1580,26 @@ const OverlayWidget: React.FC<OverlayWidgetProps> = ({ onToggleAdmin }) => {
                         )}
 
                         {successes.map((notice) => (
-                            <div key={notice.id} className="animate-slide-in glass-card rounded-lg p-2 flex items-center gap-3 border border-emerald-400/30 bg-emerald-500/10 mb-1 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-400/10 to-transparent -translate-x-full animate-[shimmer_2s_infinite]"></div>
-                                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-emerald-400/50 shadow-[0_0_8px_rgba(52,211,153,0.35)]">
+                            <div key={notice.id} style={{ borderColor: colorWithAlpha(noticeSuccessColor, 0.3), backgroundColor: colorWithAlpha(noticeSuccessColor, 0.1) }} className="animate-slide-in glass-card rounded-lg p-2 flex items-center gap-3 border mb-1 relative overflow-hidden shrink-0">
+                                <div style={{ background: `linear-gradient(90deg, transparent, ${colorWithAlpha(noticeSuccessColor, 0.1)}, transparent)` }} className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite]"></div>
+                                <div style={{ borderColor: colorWithAlpha(noticeSuccessColor, 0.5), boxShadow: `0 0 8px ${colorWithAlpha(noticeSuccessColor, 0.35)}` }} className="w-8 h-8 rounded-full overflow-hidden shrink-0 border">
                                     <img src={notice.user.avatar} className="w-full h-full object-cover" />
                                 </div>
                                 <div className="flex flex-col min-w-0 z-10">
-                                    <div className="text-[12px] font-bold text-emerald-300 truncate drop-shadow-md flex items-center gap-1.5"><span>✅</span> <span>{notice.title || `${notice.user.name || notice.user.uname || '观众'} 点歌成功`}</span></div>
+                                    <div style={{ color: noticeSuccessColor }} className="text-[12px] font-bold truncate drop-shadow-md flex items-center gap-1.5"><span>✅</span> <span>{notice.title || `${notice.user.name || notice.user.uname || '观众'} 点歌成功`}</span></div>
                                     <div className="text-[10px] text-white/85 truncate mt-0.5">{notice.detail || '已成功处理点歌请求'}</div>
                                 </div>
                             </div>
                         ))}
 
                         {rejects.map((rej) => (
-                            <div key={rej.id} className="animate-slide-in glass-card rounded-lg p-2 flex items-center gap-3 border border-red-500/30 bg-red-500/10 mb-1 relative overflow-hidden shrink-0">
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-red-500/5 to-transparent -translate-x-full animate-[shimmer_2s_infinite]"></div>
-                                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.3)]">
+                            <div key={rej.id} style={{ borderColor: colorWithAlpha(noticeFailureColor, 0.3), backgroundColor: colorWithAlpha(noticeFailureColor, 0.1) }} className="animate-slide-in glass-card rounded-lg p-2 flex items-center gap-3 border mb-1 relative overflow-hidden shrink-0">
+                                <div style={{ background: `linear-gradient(90deg, transparent, ${colorWithAlpha(noticeFailureColor, 0.08)}, transparent)` }} className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite]"></div>
+                                <div style={{ borderColor: colorWithAlpha(noticeFailureColor, 0.5), boxShadow: `0 0 8px ${colorWithAlpha(noticeFailureColor, 0.3)}` }} className="w-8 h-8 rounded-full overflow-hidden shrink-0 border">
                                     <img src={rej.user.avatar} className="w-full h-full object-cover" />
                                 </div>
                                 <div className="flex flex-col min-w-0 z-10">
-                                    <div className="text-[12px] font-bold text-red-400 truncate drop-shadow-md flex items-center gap-1.5"><span>⚠️</span> <span>{rej.user.name} 点歌失败</span></div>
+                                    <div style={{ color: noticeFailureColor }} className="text-[12px] font-bold truncate drop-shadow-md flex items-center gap-1.5"><span>⚠️</span> <span>{rej.user.name} 点歌失败</span></div>
                                     <div className="text-[10px] text-white/80 truncate mt-0.5">{rej.reason}</div>
                                 </div>
                             </div>
@@ -2707,15 +2802,15 @@ const AdminWidget: React.FC = () => {
 
                                         <div className="bg-emerald-500/5 p-4 rounded-xl border border-emerald-500/25 shadow-inner mb-5">
                                             <div className="flex items-center justify-between gap-3 mb-2">
-                                                <span className="text-sm font-bold text-emerald-300">点歌成功通知条</span>
+                                                <span className="text-sm font-bold text-emerald-300">点歌成功/失败通知条</span>
                                                 <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300">透明浏览器源</span>
                                             </div>
                                             <div className="text-xs text-gray-400 mb-3 leading-relaxed">
-                                                默认完全透明。只有收到新的点歌成功事件时，才会从顶部滑出一条类似手机通知的提示，适合放在手机状装饰框顶部。
+                                                默认完全透明。收到新的点歌成功或失败事件时，会从顶部滑出一条类似手机通知的提示，适合放在手机状装饰框顶部。
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <div className="flex-1 min-w-0 text-sm font-mono text-emerald-300 select-all truncate">{successBannerUrl}</div>
-                                                <button onClick={() => { void navigator.clipboard.writeText(successBannerUrl); showAdminToast('✅ 已复制点歌成功通知条地址'); }} className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg text-xs font-bold text-emerald-300 border border-emerald-500/25">复制</button>
+                                                <button onClick={() => { void navigator.clipboard.writeText(successBannerUrl); showAdminToast('✅ 已复制点歌通知条地址'); }} className="px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg text-xs font-bold text-emerald-300 border border-emerald-500/25">复制</button>
                                             </div>
                                         </div>
 
@@ -3067,6 +3162,7 @@ const AdminWidget: React.FC = () => {
                                             <button type="button" onClick={() => document.getElementById('settings-player')?.scrollIntoView({behavior: 'smooth'})}>播放与连接</button>
                                             <button type="button" onClick={() => document.getElementById('settings-request-rules')?.scrollIntoView({behavior: 'smooth'})}>点歌规则</button>
                                             <button type="button" onClick={() => document.getElementById('settings-display')?.scrollIntoView({behavior: 'smooth'})}>展示设置</button>
+                                            <button type="button" onClick={() => document.getElementById('settings-notices')?.scrollIntoView({behavior: 'smooth'})}>点歌提示框</button>
                                             <button type="button" onClick={() => document.getElementById('settings-api')?.scrollIntoView({behavior: 'smooth'})}>外部接口</button>
                                             <button type="button" onClick={() => document.getElementById('settings-permissions')?.scrollIntoView({behavior: 'smooth'})}>用户与权限</button>
                                         </div>
@@ -3339,40 +3435,56 @@ const AdminWidget: React.FC = () => {
                                         <div className="border-b border-white/10 pb-3">
                                             <h3 className="text-sm font-bold text-violet-200">点歌冷却</h3>
                                             <p className="mt-1 text-[11px] text-gray-500">分别设置不同身份用户的请求间隔，单位为秒。</p>
+                                            <p className="mt-1 text-[11px] text-pink-300/80">醒目留言中以“点歌”或“點歌”开头的内容会按 SC 点歌处理，并置顶到待播队首。</p>
                                         </div>
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                            <div>
-                                                <label className="block text-xs text-gray-400 mb-2">普通用户</label>
-                                                <input type="number" className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none" value={config.config.Cooldowns?.Normal || 0} onChange={e => updateCooldown('Normal', e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-blue-400 mb-2 font-bold">舰长</label>
-                                                <input type="number" className="w-full bg-blue-900/30 border border-blue-500/30 rounded-lg p-2.5 text-md text-blue-200 focus:border-blue-500 outline-none" value={config.config.Cooldowns?.Captain || 0} onChange={e => updateCooldown('Captain', e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-purple-400 mb-2 font-bold">提督</label>
-                                                <input type="number" className="w-full bg-purple-900/30 border border-purple-500/30 rounded-lg p-2.5 text-md text-purple-200 focus:border-purple-500 outline-none" value={config.config.Cooldowns?.Admiral || 0} onChange={e => updateCooldown('Admiral', e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-red-400 mb-2 font-bold">总督</label>
-                                                <input type="number" className="w-full bg-red-900/30 border border-red-500/30 rounded-lg p-2.5 text-md text-red-200 focus:border-red-500 outline-none" value={config.config.Cooldowns?.Governor || 0} onChange={e => updateCooldown('Governor', e.target.value)} />
-                                            </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            {[
+                                                { key: 'Normal', label: '普通用户', accent: 'text-gray-300', input: 'bg-black/30 border-white/10 text-white focus:border-violet-400' },
+                                                { key: 'Captain', label: '舰长', accent: 'text-blue-300', input: 'bg-blue-500/10 border-blue-400/20 text-blue-100 focus:border-blue-400' },
+                                                { key: 'Admiral', label: '提督', accent: 'text-purple-300', input: 'bg-purple-500/10 border-purple-400/20 text-purple-100 focus:border-purple-400' },
+                                                { key: 'Governor', label: '总督', accent: 'text-red-300', input: 'bg-red-500/10 border-red-400/20 text-red-100 focus:border-red-400' }
+                                            ].map(tier => (
+                                                <div key={tier.key} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                                                    <div className="mb-2 flex items-center justify-between gap-2">
+                                                        <label className={`text-xs font-bold ${tier.accent}`}>{tier.label}</label>
+                                                        <span className="text-[10px] text-gray-600">秒</span>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        className={`w-full rounded-lg border p-2.5 text-md outline-none transition-colors ${tier.input}`}
+                                                        value={config.config.Cooldowns?.[tier.key] || 0}
+                                                        onChange={e => updateCooldown(tier.key, e.target.value)}
+                                                    />
+                                                </div>
+                                            ))}
                                         </div>
-                                        <div className="flex justify-between items-center gap-4 bg-black/30 border border-white/10 rounded-lg p-3">
-                                            <div>
-                                                <label className="block text-sm text-white font-medium">白名单用户无视点歌冷却</label>
-                                                <span className="text-xs text-gray-500 block mt-1">开启后，下方 UID 白名单用户不会被本冷却规则限制</span>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div className="flex min-h-[74px] items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/25 p-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-white">白名单豁免</label>
+                                                    <span className="mt-1 block text-xs leading-relaxed text-gray-500">规则白名单用户不受点歌冷却限制</span>
+                                                </div>
+                                                <button aria-label="切换白名单点歌冷却豁免" onClick={() => persistSysConfigNow({...config.config, CooldownWhitelistExempt: !config.config.CooldownWhitelistExempt})} className={`w-10 h-6 rounded-full p-1 transition-colors shrink-0 ${config.config.CooldownWhitelistExempt ? 'bg-cyan-600' : 'bg-gray-600'}`}>
+                                                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${config.config.CooldownWhitelistExempt ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                </button>
                                             </div>
-                                            <button onClick={() => persistSysConfigNow({...config.config, CooldownWhitelistExempt: !config.config.CooldownWhitelistExempt})} className={`w-10 h-6 rounded-full p-1 transition-colors shrink-0 ${config.config.CooldownWhitelistExempt ? 'bg-blue-600' : 'bg-gray-600'}`}>
-                                                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${config.config.CooldownWhitelistExempt ? 'translate-x-4' : 'translate-x-0'}`}></div>
-                                            </button>
+                                            <div className="flex min-h-[74px] items-center justify-between gap-4 rounded-xl border border-pink-400/15 bg-pink-500/5 p-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-white">SC 点歌豁免</label>
+                                                    <span className="mt-1 block text-xs leading-relaxed text-gray-500">醒目留言点歌不受点歌冷却限制</span>
+                                                </div>
+                                                <button aria-label="切换 SC 点歌冷却豁免" onClick={() => persistSysConfigNow({...config.config, SuperChatCooldownExempt: !config.config.SuperChatCooldownExempt})} className={`w-10 h-6 rounded-full p-1 transition-colors shrink-0 ${config.config.SuperChatCooldownExempt ? 'bg-pink-600' : 'bg-gray-600'}`}>
+                                                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${config.config.SuperChatCooldownExempt ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div id="settings-display" className="settings-card bg-white/5 p-6 rounded-xl border border-white/10 space-y-5 mb-6">
                                         <div className="border-b border-white/10 pb-3">
                                             <h3 className="text-sm font-bold text-violet-200">点歌与展示</h3>
-                                            <p className="mt-1 text-[11px] text-gray-500">调整播放衔接、封面显示与通知条样式。</p>
+                                            <p className="mt-1 text-[11px] text-gray-500">调整播放衔接、封面显示与点歌队列行为。</p>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div>
@@ -3422,74 +3534,6 @@ const AdminWidget: React.FC = () => {
                                                 <span className="text-xs text-gray-500 block mt-1.5">主播歌单始终显示歌曲封面</span>
                                             </div>
 
-                                            <div>
-                                                <BoundedRange
-                                                    label="顶部通知停留时长"
-                                                    value={Number(config.config.OverlayNoticeDurationMs ?? 5000)}
-                                                    minimum={1000}
-                                                    maximum={15000}
-                                                    step={100}
-                                                    minimumLabel="1 秒"
-                                                    maximumLabel="15 秒"
-                                                    formatValue={value => `${Number((value / 1000).toFixed(1))} 秒`}
-                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeDurationMs', value)}
-                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeDurationMs', value)}
-                                                    onEditingChange={handleRangeEditingChange}
-                                                />
-                                                <span className="text-xs text-gray-500 block mt-1.5">应用于顶部成功/失败通知条，建议 3–7 秒。</span>
-                                            </div>
-
-                                            <div>
-                                                <BoundedRange
-                                                    label="顶部通知条宽度"
-                                                    value={Number(config.config.OverlayNoticeWidthPx ?? 720)}
-                                                    minimum={280}
-                                                    maximum={1200}
-                                                    step={10}
-                                                    minimumLabel="280 px"
-                                                    maximumLabel="1200 px"
-                                                    formatValue={value => `${value} px`}
-                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeWidthPx', value)}
-                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeWidthPx', value)}
-                                                    onEditingChange={handleRangeEditingChange}
-                                                />
-                                                <span className="text-xs text-gray-500 block mt-1.5">控制通知条的最大宽度，建议 360–760 px。</span>
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-xs text-gray-400 mb-2">顶部通知条主题</label>
-                                                <select
-                                                    value={config.config.OverlayNoticeTheme === 'light' ? 'light' : 'dark'}
-                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeTheme: e.target.value === 'light' ? 'light' : 'dark'}})}
-                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none cursor-pointer"
-                                                >
-                                                    <option value="dark">深色主题</option>
-                                                    <option value="light">浅色主题</option>
-                                                </select>
-                                                <span className="text-xs text-gray-500 block mt-1.5">影响顶部成功/失败通知条的底色、边框和文字亮度。</span>
-                                            </div>
-
-                                            <div>
-                                                <BoundedRange
-                                                    label="顶部通知条透明度"
-                                                    value={Number(config.config.OverlayNoticeOpacity ?? 0.94)}
-                                                    minimum={0}
-                                                    maximum={1}
-                                                    step={0.05}
-                                                    minimumLabel="透明"
-                                                    maximumLabel="不透明"
-                                                    formatValue={value => `${Math.round(value * 100)}%`}
-                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeOpacity', Number(value.toFixed(2)))}
-                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeOpacity', Number(value.toFixed(2)))}
-                                                    onEditingChange={handleRangeEditingChange}
-                                                />
-                                                <span className="text-xs text-gray-500 block mt-1.5">只控制通知卡片主体，文字、头像和状态标记保持清晰。</span>
-                                                <div className="mt-2.5 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs leading-relaxed text-amber-200">
-                                                    <span className="font-bold text-amber-300">OBS 浅色半透明提示：</span>
-                                                    若降低透明度后卡片发灰，请在 OBS 中右键该浏览器源，将“混合方式”设为“SRGB Off”；“混合模式”保持“普通”。
-                                                </div>
-                                            </div>
-
                                             <div className="flex flex-col justify-center pt-3">
                                                 <div className="flex justify-between items-center gap-4 bg-black/30 border border-white/10 rounded-lg p-3">
                                                     <div>
@@ -3509,6 +3553,16 @@ const AdminWidget: React.FC = () => {
                                                         className="w-4 h-4"
                                                     />
                                                     白名单用户不受此限制
+                                                </label>
+                                                <label className={`flex items-center gap-2 mt-2 text-xs ${config.config.SinglePendingRequestPerUser ? 'text-gray-400' : 'text-gray-600'}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        disabled={!config.config.SinglePendingRequestPerUser}
+                                                        checked={config.config.SuperChatSinglePendingExempt === true}
+                                                        onChange={e => persistSysConfigNow({...config.config, SuperChatSinglePendingExempt: e.target.checked})}
+                                                        className="w-4 h-4"
+                                                    />
+                                                    SC 点歌不受此限制
                                                 </label>
                                             </div>
 
@@ -3535,6 +3589,101 @@ const AdminWidget: React.FC = () => {
                                                     </button>
                                                 </div>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="settings-notices" className="settings-card bg-white/5 p-6 rounded-xl border border-emerald-400/20 space-y-5 mb-6">
+                                        <div className="border-b border-white/10 pb-3">
+                                            <h3 className="text-sm font-bold text-emerald-200">点歌提示框</h3>
+                                            <p className="mt-1 text-[11px] text-gray-500">集中设置 OBS 顶部点歌成功/失败通知条的尺寸、主题、透明度与状态颜色。</p>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <NoticeColorPicker
+                                                label="点歌成功颜色"
+                                                description="用于成功通知的边框、状态标记和装饰光晕。"
+                                                value={config.config.OverlayNoticeSuccessColor}
+                                                fallback={DEFAULT_NOTICE_SUCCESS_COLOR}
+                                                onChange={value => setConfig({...config, config: {...config.config, OverlayNoticeSuccessColor: value}})}
+                                            />
+                                            <NoticeColorPicker
+                                                label="点歌失败颜色"
+                                                description="用于失败通知的边框、状态标记和装饰光晕。"
+                                                value={config.config.OverlayNoticeFailureColor}
+                                                fallback={DEFAULT_NOTICE_FAILURE_COLOR}
+                                                onChange={value => setConfig({...config, config: {...config.config, OverlayNoticeFailureColor: value}})}
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <BoundedRange
+                                                    label="顶部通知停留时长"
+                                                    value={Number(config.config.OverlayNoticeDurationMs ?? 5000)}
+                                                    minimum={1000}
+                                                    maximum={15000}
+                                                    step={100}
+                                                    minimumLabel="1 秒"
+                                                    maximumLabel="15 秒"
+                                                    formatValue={value => `${Number((value / 1000).toFixed(1))} 秒`}
+                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeDurationMs', value)}
+                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeDurationMs', value)}
+                                                    onEditingChange={handleRangeEditingChange}
+                                                />
+                                                <span className="text-xs text-gray-500 block mt-1.5">建议 3–7 秒。</span>
+                                            </div>
+
+                                            <div>
+                                                <BoundedRange
+                                                    label="顶部通知条宽度"
+                                                    value={Number(config.config.OverlayNoticeWidthPx ?? 720)}
+                                                    minimum={280}
+                                                    maximum={1200}
+                                                    step={10}
+                                                    minimumLabel="280 px"
+                                                    maximumLabel="1200 px"
+                                                    formatValue={value => `${value} px`}
+                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeWidthPx', value)}
+                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeWidthPx', value)}
+                                                    onEditingChange={handleRangeEditingChange}
+                                                />
+                                                <span className="text-xs text-gray-500 block mt-1.5">建议 360–760 px。</span>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-2">顶部通知条主题</label>
+                                                <select
+                                                    value={config.config.OverlayNoticeTheme === 'light' ? 'light' : 'dark'}
+                                                    onChange={e => setConfig({...config, config: {...config.config, OverlayNoticeTheme: e.target.value === 'light' ? 'light' : 'dark'}})}
+                                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-md text-white focus:border-blue-500 outline-none cursor-pointer"
+                                                >
+                                                    <option value="dark">深色主题</option>
+                                                    <option value="light">浅色主题</option>
+                                                </select>
+                                                <span className="text-xs text-gray-500 block mt-1.5">影响通知条底色和文字亮度，自定义颜色保持不变。</span>
+                                            </div>
+
+                                            <div>
+                                                <BoundedRange
+                                                    label="顶部通知条透明度"
+                                                    value={Number(config.config.OverlayNoticeOpacity ?? 0.94)}
+                                                    minimum={0}
+                                                    maximum={1}
+                                                    step={0.05}
+                                                    minimumLabel="透明"
+                                                    maximumLabel="不透明"
+                                                    formatValue={value => `${Math.round(value * 100)}%`}
+                                                    onChange={value => updateBoundedConfigValue('OverlayNoticeOpacity', Number(value.toFixed(2)))}
+                                                    onCommit={value => commitBoundedConfigValue('OverlayNoticeOpacity', Number(value.toFixed(2)))}
+                                                    onEditingChange={handleRangeEditingChange}
+                                                />
+                                                <span className="text-xs text-gray-500 block mt-1.5">文字、头像和状态标记会保持清晰。</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2.5 text-xs leading-relaxed text-amber-200">
+                                            <span className="font-bold text-amber-300">OBS 浅色半透明提示：</span>
+                                            若降低透明度后卡片发灰，请在 OBS 中右键该浏览器源，将“混合方式”设为“SRGB Off”；“混合模式”保持“普通”。
                                         </div>
                                     </div>
 
@@ -3658,7 +3807,8 @@ const AdminWidget: React.FC = () => {
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                             {permTypes.map(pt => {
-                                                const pData = config.config[pt.key] || { AllowManager: true, MinGuardType: (pt.key === 'ForceControlPermission' ? -1 : 0), MinMedalLevel: 0 };
+                                                const pData = config.config[pt.key] || { AllowManager: true, AllowWhitelist: false, AllowSuperChat: false, MinGuardType: (pt.key === 'ForceControlPermission' ? -1 : 0), MinMedalLevel: 0 };
+                                                const supportsSuperChatExemption = pt.key === 'OrderPermission';
 
                                                 return (
                                                     <div key={pt.key} className="bg-black/40 border border-white/5 p-4 rounded-xl flex flex-col gap-4">
@@ -3670,6 +3820,15 @@ const AdminWidget: React.FC = () => {
                                                                 <div className={`w-4 h-4 rounded-full bg-white transition-transform ${pData.AllowManager ? 'translate-x-4' : 'translate-x-0'}`}></div>
                                                             </button>
                                                         </div>
+
+                                                        {supportsSuperChatExemption && (
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="text-sm text-gray-300">允许 SC 点歌无视此权限</span>
+                                                                <button disabled={!config.biliLogin} onClick={() => persistSysConfigNow({...config.config, [pt.key]: {...pData, AllowSuperChat: !pData.AllowSuperChat}})} className={`w-10 h-6 rounded-full p-1 transition-colors disabled:cursor-not-allowed ${pData.AllowSuperChat ? 'bg-pink-600' : 'bg-gray-600'}`}>
+                                                                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${pData.AllowSuperChat ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                                </button>
+                                                            </div>
+                                                        )}
 
                                                         <div className="flex justify-between items-center">
                                                             <span className="text-sm text-gray-300">允许规则白名单无视限制</span>

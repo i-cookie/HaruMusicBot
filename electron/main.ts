@@ -33,6 +33,10 @@ import {
   userIdInList
 } from './song-request-policy';
 import {
+  getBasicSongRequestKeyword,
+  parseSuperChatCommand
+} from './super-chat-policy';
+import {
   getNeteaseSongCover
 } from './players/netease-player';
 import { PlayerManager } from './players/player-manager';
@@ -271,6 +275,12 @@ ipcMain.on('overlay-resize', (event, w, h) => {
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'bili_bot_config.json');
 
+function normalizeOverlayNoticeColor(value: unknown, fallback: string): string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+    ? value.toLowerCase()
+    : fallback;
+}
+
 let appConfig: any = {
   roomId: 0,
   myRoomId: 0,
@@ -291,10 +301,14 @@ let appConfig: any = {
     RequestWhitelistUsers: [],
     CooldownWhitelistExempt: false,
     SinglePendingRequestWhitelistExempt: false,
+    SuperChatCooldownExempt: false,
+    SuperChatSinglePendingExempt: false,
     OverlayNoticeDurationMs: 5000,
     OverlayNoticeWidthPx: 720,
     OverlayNoticeTheme: 'dark',
     OverlayNoticeOpacity: 0.94,
+    OverlayNoticeSuccessColor: '#10b981',
+    OverlayNoticeFailureColor: '#f43f5e',
     ExternalHttpEnabled: false,
     ExternalWebSocketEnabled: false,
     ExternalApiPort: 5556
@@ -308,7 +322,7 @@ function loadConfig() {
       appConfig = { ...appConfig, ...saved };
 
       if (!appConfig.sysConfig) {
-        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, SinglePendingRequestPerUser: false, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], RequestWhitelistUsers: [], CooldownWhitelistExempt: false, SinglePendingRequestWhitelistExempt: false, OverlayNoticeDurationMs: 5000, OverlayNoticeWidthPx: 720, OverlayNoticeTheme: 'dark', OverlayNoticeOpacity: 0.94, ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
+        appConfig.sysConfig = { PlayerType: 'NCM', FoliaToken: '', Cooldowns: { Normal: 0, Captain: 0, Admiral: 0, Governor: 0 }, SinglePendingRequestPerUser: false, IdleWaitNext: true, ShowPlayerCurrentTrack: true, PauseAfterRequests: false, RequestedSongArtwork: 'bili_avatar', ShowAllDanmaku: false, SuperUsers: appConfig.superUsers || [], RequestWhitelistUsers: [], CooldownWhitelistExempt: false, SinglePendingRequestWhitelistExempt: false, SuperChatCooldownExempt: false, SuperChatSinglePendingExempt: false, OverlayNoticeDurationMs: 5000, OverlayNoticeWidthPx: 720, OverlayNoticeTheme: 'dark', OverlayNoticeOpacity: 0.94, OverlayNoticeSuccessColor: '#10b981', OverlayNoticeFailureColor: '#f43f5e', ExternalHttpEnabled: false, ExternalWebSocketEnabled: false, ExternalApiPort: 5556 };
       }
       if (!['NCM', 'Kugou', 'QQMusic', 'Folia'].includes(appConfig.sysConfig.PlayerType)) appConfig.sysConfig.PlayerType = 'NCM';
       if (appConfig.sysConfig.FoliaToken === undefined) appConfig.sysConfig.FoliaToken = '';
@@ -320,6 +334,8 @@ function loadConfig() {
       appConfig.sysConfig.RequestWhitelistUsers = normalizeUserIdList(appConfig.sysConfig.RequestWhitelistUsers);
       if (appConfig.sysConfig.CooldownWhitelistExempt === undefined) appConfig.sysConfig.CooldownWhitelistExempt = false;
       if (appConfig.sysConfig.SinglePendingRequestWhitelistExempt === undefined) appConfig.sysConfig.SinglePendingRequestWhitelistExempt = false;
+      if (appConfig.sysConfig.SuperChatCooldownExempt === undefined) appConfig.sysConfig.SuperChatCooldownExempt = false;
+      if (appConfig.sysConfig.SuperChatSinglePendingExempt === undefined) appConfig.sysConfig.SuperChatSinglePendingExempt = false;
       const overlayNoticeDurationMs = Number(appConfig.sysConfig.OverlayNoticeDurationMs);
       appConfig.sysConfig.OverlayNoticeDurationMs = (
         Number.isFinite(overlayNoticeDurationMs)
@@ -339,6 +355,14 @@ function loadConfig() {
         && overlayNoticeOpacity >= 0
         && overlayNoticeOpacity <= 1
       ) ? Math.round(overlayNoticeOpacity * 100) / 100 : 0.94;
+      appConfig.sysConfig.OverlayNoticeSuccessColor = normalizeOverlayNoticeColor(
+        appConfig.sysConfig.OverlayNoticeSuccessColor,
+        '#10b981'
+      );
+      appConfig.sysConfig.OverlayNoticeFailureColor = normalizeOverlayNoticeColor(
+        appConfig.sysConfig.OverlayNoticeFailureColor,
+        '#f43f5e'
+      );
       if (appConfig.sysConfig.ExternalHttpEnabled === undefined) appConfig.sysConfig.ExternalHttpEnabled = false;
       if (appConfig.sysConfig.ExternalWebSocketEnabled === undefined) appConfig.sysConfig.ExternalWebSocketEnabled = false;
       const apiPort = Number(appConfig.sysConfig.ExternalApiPort);
@@ -820,6 +844,7 @@ function getPermissionConfig(permKey: string): any {
   return {
     AllowManager: true,
     AllowWhitelist: false,
+    AllowSuperChat: false,
     MinGuardType: defaultGuardType,
     MinMedalLevel: 0,
     ...(appConfig.sysConfig?.[permKey] || {})
@@ -827,6 +852,8 @@ function getPermissionConfig(permKey: string): any {
 }
 
 function checkPermission(user: any, permKey: string): { allowed: boolean, reason?: string } {
+  const perm = getPermissionConfig(permKey);
+  if (user?.isSuperChat === true && perm.AllowSuperChat === true) return { allowed: true };
   if (!isBiliLoginReady()) {
     if (
       permKey === 'OrderPermission'
@@ -840,7 +867,6 @@ function checkPermission(user: any, permKey: string): { allowed: boolean, reason
     };
   }
   if (isGlobalPrivilegedUser(user)) return { allowed: true };
-  const perm = getPermissionConfig(permKey);
   if (perm.AllowWhitelist === true && isRequestWhitelistUser(user)) return { allowed: true };
   if (perm.MinGuardType === -1) {
     if (perm.AllowManager && user.isManager) return { allowed: true };
@@ -874,7 +900,7 @@ function enqueueDanmakuCommand(user: any, message: string): void {
   if (!normalized) return;
 
   const now = Date.now();
-  const fingerprint = `${user.uid}|${normalized}`;
+  const fingerprint = `${user.uid}|${user?.isSuperChat === true ? 'sc' : 'danmaku'}|${normalized}`;
   const previous = recentDanmakuCommands.get(fingerprint) || 0;
   if (now - previous < 800) {
     writeLog(`[指令队列] 已忽略 800ms 内重复指令: ${normalized}`, 'DarkGray');
@@ -929,6 +955,17 @@ async function processDanmakuCommandQueue(): Promise<void> {
 
 function handleRawDanmaku(doc: any) {
   const cmd = doc.cmd || "";
+  if (cmd === 'SUPER_CHAT_MESSAGE') {
+    if (appConfig.sysConfig?.ShowAllDanmaku) writeLog(`[RAW原始数据] ${JSON.stringify(doc)}`, 'DarkGray');
+    const superChat = parseSuperChatCommand(doc);
+    if (!superChat || !getBasicSongRequestKeyword(superChat.message)) return;
+    writeLog(
+      `[SC点歌] ${superChat.user.uname}（￥${superChat.user.superChatPrice}）: ${superChat.message}`,
+      'Magenta'
+    );
+    enqueueDanmakuCommand(superChat.user, superChat.message);
+    return;
+  }
   if (cmd.startsWith("DANMU_MSG")) {
     if (appConfig.sysConfig?.ShowAllDanmaku) writeLog(`[RAW原始数据] ${JSON.stringify(doc)}`, 'DarkGray');
     const info = doc.info;
@@ -1788,9 +1825,10 @@ async function tryRequestSong(
     }
 
     if (
-      mode === 'normal'
+      (mode === 'normal' || user?.isSuperChat === true)
       && appConfig.sysConfig?.SinglePendingRequestPerUser === true
       && !isGlobalPrivilegedUser(user)
+      && !(user?.isSuperChat === true && appConfig.sysConfig?.SuperChatSinglePendingExempt === true)
       && !(
         appConfig.sysConfig?.SinglePendingRequestWhitelistExempt === true
         && isRequestWhitelistUser(user)
@@ -1837,7 +1875,9 @@ async function tryRequestSong(
       OrderedByUid: user.uid,
       OrderedByAvatar: avatarUrl,
       CoverUrl: coverUrl,
-      GuardLevel: user.guardLevel
+      GuardLevel: user.guardLevel,
+      IsSuperChat: user?.isSuperChat === true,
+      SuperChatPrice: user?.isSuperChat === true ? Number(user.superChatPrice) || 0 : 0
     };
     cancelledNativeNextSongs.delete(getQueueSongIdentity(newSong));
     const getQueueAheadCount = (): number => {
@@ -1965,6 +2005,7 @@ async function handleDanmaku(user: any, msg: string): Promise<void> {
   const isTopOrder = msg.startsWith('置顶点歌') || msg.startsWith('优先点歌');
   const isInterruptOrder = msg.startsWith('插队点歌');
   const isPlayNowOrder = msg.startsWith('立即点歌');
+  const isSuperChatOrder = user?.isSuperChat === true && isOrder;
   const isCancel = msg.startsWith('撤回');
   const isSkip = msg === '切歌' || msg === '跳过';
   const isToggleAccept = (
@@ -2030,12 +2071,14 @@ async function handleDanmaku(user: any, msg: string): Promise<void> {
 
   if (isOrder || isTopOrder || isInterruptOrder || isPlayNowOrder) {
     let keyword = ''; let mode: 'normal' | 'top' | 'interrupt' | 'play_now' = 'normal';
-    if (isPlayNowOrder) { keyword = msg.replace(/^立即点歌/, '').trim(); mode = 'play_now'; }
+    if (isSuperChatOrder) { keyword = msg.substring(2).trim(); mode = 'top'; }
+    else if (isPlayNowOrder) { keyword = msg.replace(/^立即点歌/, '').trim(); mode = 'play_now'; }
     else if (isInterruptOrder) { keyword = msg.replace(/^插队点歌/, '').trim(); mode = 'interrupt'; }
     else if (isTopOrder) { keyword = msg.replace(/^(置顶点歌|优先点歌)/, '').trim(); mode = 'top'; }
     else { keyword = msg.substring(2).trim(); }
 
     const cooldownExempt = isGlobalPrivilegedUser(user)
+      || (user?.isSuperChat === true && appConfig.sysConfig?.SuperChatCooldownExempt === true)
       || (
         appConfig.sysConfig?.CooldownWhitelistExempt === true
         && isRequestWhitelistUser(user)
@@ -2053,7 +2096,11 @@ async function handleDanmaku(user: any, msg: string): Promise<void> {
       }
     }
 
-    if (mode === 'top') { const perm = checkPermission(user, 'PriorityPermission'); if (!perm.allowed) { await addReject(user, perm.reason!); return; } }
+    if (isSuperChatOrder) {
+      const orderPerm = checkPermission(user, 'OrderPermission');
+      if (!orderPerm.allowed) { await addReject(user, orderPerm.reason!); return; }
+    }
+    else if (mode === 'top') { const perm = checkPermission(user, 'PriorityPermission'); if (!perm.allowed) { await addReject(user, perm.reason!); return; } }
     else if (mode === 'interrupt' || mode === 'play_now') { const perm = checkPermission(user, 'ForceControlPermission'); if (!perm.allowed) { await addReject(user, perm.reason!); return; } }
     else { const perm = checkPermission(user, 'OrderPermission'); if (!perm.allowed) { await addReject(user, perm.reason!); return; } }
 
@@ -2838,7 +2885,7 @@ function startBackendServer() {
         ? Math.min(1, Math.max(0, configuredNoticeOpacity))
         : 0.94;
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity, rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
+      res.end(JSON.stringify({ current: displayCurrent, currentIsRequested: !!currentPlayingSong, playerPausedAfterRequests, requestedSongArtwork, queue: targetQueue, status: connectorMaintenanceStatus || currentStatusMessage, accepting: isAccepting, playing: isPlaying, uiConfig: appConfig.widgetStyle, overlayNoticeDurationMs: Number(appConfig.sysConfig?.OverlayNoticeDurationMs) || 5000, overlayNoticeWidthPx: Number(appConfig.sysConfig?.OverlayNoticeWidthPx) || 720, overlayNoticeTheme: appConfig.sysConfig?.OverlayNoticeTheme === 'light' ? 'light' : 'dark', overlayNoticeOpacity, overlayNoticeSuccessColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeSuccessColor, '#10b981'), overlayNoticeFailureColor: normalizeOverlayNoticeColor(appConfig.sysConfig?.OverlayNoticeFailureColor, '#f43f5e'), rejects: recentRejects, successes: recentSuccesses, cdpConnected: isPlayerConnected, playerConnected: isPlayerConnected, playerConnecting, commandQueue: { pending: danmakuCommandQueue.length, processing: processingDanmakuCommand } }));
       return;
     }
 
@@ -3013,6 +3060,8 @@ function startBackendServer() {
         appConfig.sysConfig.RequestWhitelistUsers = normalizeUserIdList(appConfig.sysConfig.RequestWhitelistUsers);
         if (appConfig.sysConfig.CooldownWhitelistExempt === undefined) appConfig.sysConfig.CooldownWhitelistExempt = false;
         if (appConfig.sysConfig.SinglePendingRequestWhitelistExempt === undefined) appConfig.sysConfig.SinglePendingRequestWhitelistExempt = false;
+        if (appConfig.sysConfig.SuperChatCooldownExempt === undefined) appConfig.sysConfig.SuperChatCooldownExempt = false;
+        if (appConfig.sysConfig.SuperChatSinglePendingExempt === undefined) appConfig.sysConfig.SuperChatSinglePendingExempt = false;
         const overlayNoticeDurationMs = Number(appConfig.sysConfig.OverlayNoticeDurationMs);
         appConfig.sysConfig.OverlayNoticeDurationMs = (
           Number.isFinite(overlayNoticeDurationMs)
@@ -3032,6 +3081,14 @@ function startBackendServer() {
           && overlayNoticeOpacity >= 0
           && overlayNoticeOpacity <= 1
         ) ? Math.round(overlayNoticeOpacity * 100) / 100 : 0.94;
+        appConfig.sysConfig.OverlayNoticeSuccessColor = normalizeOverlayNoticeColor(
+          appConfig.sysConfig.OverlayNoticeSuccessColor,
+          '#10b981'
+        );
+        appConfig.sysConfig.OverlayNoticeFailureColor = normalizeOverlayNoticeColor(
+          appConfig.sysConfig.OverlayNoticeFailureColor,
+          '#f43f5e'
+        );
         appConfig.sysConfig.ExternalApiPort = getExternalApiPort();
         delete appConfig.sysConfig.EnableCDP;
         delete appConfig.sysConfig.CdpPort;
