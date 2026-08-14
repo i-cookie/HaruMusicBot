@@ -23,6 +23,23 @@ internal static class QQMusicNativeNextProfiles
     private static readonly QQMusicNativeNextProfile[] KnownProfiles =
     [
         new(
+            "21.92",
+            "1DBBF00F1E3DC65A9F6C7BA5AF8F8D4B57440F909E84EDD64B80B869EAE390D9",
+            "EC9AB72AFE3108FBCBB5849BFFE4015D42A9F2CB89494F6AF4894D2C4A270889",
+            0x00460677,
+            [0xE8, 0x84, 0x02, 0x16, 0x00],
+            0x0000F071,
+            0x0002DFA9,
+            0x00044200,
+            0x00043D40,
+            0x00411C80,
+            0x00AFD9F0,
+            0x005E3470,
+            0x005E35D0,
+            0x004C0570,
+            0xA0,
+            "2026-08-14 从当前安装构建恢复静态调用链并通过全部只读门禁"),
+        new(
             "22.22",
             "FF0AB7911EB2ACF433F2DAF0FC4BA48FFFC64169CD822CE4D5B00E88FA180A50",
             "9F7FC7DF5BC4BBE9B4C3377449CBCB3C47A218A934FAAE4DFF8578C3EDAF652F",

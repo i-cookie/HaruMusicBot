@@ -1,5 +1,9 @@
-import type { PlayerBridgeClient } from '../player-bridge-client';
+import type {
+  PlayerBridgeClient,
+  PlayerTrack
+} from '../player-bridge-client';
 import { buildNeteaseCoverUrlFromPicId } from '../netease-cover';
+import { searchNeteaseWithFallback } from '../netease-search';
 import { NativePlayerBackend } from './native-player';
 
 const NETEASE_DETAIL_ENDPOINT =
@@ -74,5 +78,13 @@ export async function getNeteaseSongCover(songId: string): Promise<string> {
 export class NeteasePlayerBackend extends NativePlayerBackend {
   constructor(bridge: PlayerBridgeClient) {
     super('netease', '网易云音乐', bridge);
+  }
+
+  override async search(query: string): Promise<PlayerTrack[]> {
+    return await searchNeteaseWithFallback(
+      query,
+      value => super.search(value),
+      readNeteaseCover
+    );
   }
 }

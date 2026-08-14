@@ -88,6 +88,11 @@ if (process.platform === 'win32') {
   );
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
 // 强制修复 Windows 终端 of UTF-8 中文乱码问题
 try {
   if (process.platform === 'win32') {
@@ -178,6 +183,16 @@ process.on('unhandledRejection', (reason) => {
 
 let overlayWindow: BrowserWindow | null = null;
 let adminWindow: BrowserWindow | null = null;
+
+app.on('second-instance', () => {
+  const targetWindow = adminWindow && !adminWindow.isDestroyed()
+    ? adminWindow
+    : overlayWindow;
+  if (!targetWindow || targetWindow.isDestroyed()) return;
+  if (targetWindow.isMinimized()) targetWindow.restore();
+  targetWindow.show();
+  targetWindow.focus();
+});
 
 function getDevUrl(): string | undefined {
   return process.env['VITE_DEV_SERVER_URL'] || process.env['ELECTRON_RENDERER_URL'];
@@ -4075,6 +4090,7 @@ function startBackendServer() {
 // 程序启动入口
 // ==========================================
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
   writeLog('=== 易点椿曲内部日志已连接 ===', 'Cyan');
   loadConfig();
   attachInternalApiTokenToAppSession();

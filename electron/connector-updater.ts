@@ -19,6 +19,8 @@ import {
   requiresManualConnectorUpdate,
   type ConnectorUpdateKind
 } from './connector-version-policy';
+import { cleanupActivatedConnectorBackup } from './connector-install-policy';
+import { QQMUSIC_COMPATIBILITY_PROFILES } from './qqmusic-compatibility-profiles';
 
 export type NativeConnectorId =
   | 'netease'
@@ -163,6 +165,7 @@ export class ConnectorUpdater {
   >();
   private readonly validatedExecutables = new Set<string>();
   private qqMusicProfileUpdate: Promise<string | null> | null = null;
+  private qqMusicEffectiveProfileUpdate: Promise<string> | null = null;
   private privateDotnetRuntime: PrivateDotnetRuntimeManager | null = null;
 
   constructor(
@@ -187,17 +190,94 @@ export class ConnectorUpdater {
       ? buildPrivateDotnetEnvironment(active.runtimeRid, active.runtimeRoot)
       : {};
     if (connectorId !== 'qqmusic') return environment;
+    let onlineDirectory: string | null = null;
     try {
-      const directory = await this.ensureQQMusicProfiles();
-      return directory
-        ? { ...environment, BILINCM_QQMUSIC_PROFILE_DIR: directory }
-        : environment;
+      onlineDirectory = await this.ensureQQMusicProfiles();
     } catch (error: unknown) {
       this.onLog(
         `[QQ 画像] 在线画像更新失败，继续使用连接器内置画像：`
         + getErrorMessage(error)
       );
-      return environment;
+    }
+    try {
+      const directory = await this.ensureEffectiveQQMusicProfiles(
+        onlineDirectory
+      );
+      return { ...environment, BILINCM_QQMUSIC_PROFILE_DIR: directory };
+    } catch (error: unknown) {
+      this.onLog(
+        `[QQ 画像] 本地兼容画像准备失败：${getErrorMessage(error)}`
+      );
+      return onlineDirectory
+        ? {
+            ...environment,
+            BILINCM_QQMUSIC_PROFILE_DIR: onlineDirectory
+          }
+        : environment;
+    }
+  }
+
+  private async ensureEffectiveQQMusicProfiles(
+    onlineDirectory: string | null
+  ): Promise<string> {
+    if (this.qqMusicEffectiveProfileUpdate) {
+      return this.qqMusicEffectiveProfileUpdate;
+    }
+    const update = this.ensureEffectiveQQMusicProfilesInternal(
+      onlineDirectory
+    ).finally(() => {
+      if (this.qqMusicEffectiveProfileUpdate === update) {
+        this.qqMusicEffectiveProfileUpdate = null;
+      }
+    });
+    this.qqMusicEffectiveProfileUpdate = update;
+    return update;
+  }
+
+  private async ensureEffectiveQQMusicProfilesInternal(
+    onlineDirectory: string | null
+  ): Promise<string> {
+    const profileRoot = this.getQQMusicProfileRoot();
+    const effectiveDirectory = path.join(profileRoot, 'effective');
+    const nonce = crypto.randomBytes(8).toString('hex');
+    const stagingDirectory = path.join(
+      profileRoot,
+      `.effective-staging-${nonce}`
+    );
+    await fs.promises.mkdir(stagingDirectory, { recursive: true });
+    try {
+      if (onlineDirectory) {
+        const onlineFiles = (await fs.promises.readdir(onlineDirectory))
+          .filter(file => /^\d+\.\d+\.json$/i.test(file));
+        for (const file of onlineFiles) {
+          await fs.promises.copyFile(
+            path.join(onlineDirectory, file),
+            path.join(stagingDirectory, file)
+          );
+        }
+      }
+
+      for (const [file, profile] of Object.entries(
+        QQMUSIC_COMPATIBILITY_PROFILES
+      )) {
+        const destination = path.join(stagingDirectory, file);
+        if (await pathExists(destination)) continue;
+        await fs.promises.writeFile(
+          destination,
+          `${JSON.stringify(profile, null, 2)}\n`,
+          { flag: 'wx' }
+        );
+      }
+
+      if (await pathExists(effectiveDirectory)) {
+        await removeInside(profileRoot, effectiveDirectory);
+      }
+      await fs.promises.rename(stagingDirectory, effectiveDirectory);
+      return effectiveDirectory;
+    } finally {
+      if (await pathExists(stagingDirectory)) {
+        await removeInside(profileRoot, stagingDirectory);
+      }
     }
   }
 
@@ -755,6 +835,7 @@ export class ConnectorUpdater {
     );
     let installedNewDirectory = false;
     let movedPreviousDirectory = false;
+    let preserveBackupDirectory = false;
 
     try {
       const downloadOptions: Parameters<
@@ -850,8 +931,21 @@ export class ConnectorUpdater {
         activatedAt: new Date().toISOString()
       });
       if (movedPreviousDirectory) {
-        await removeInside(connectorRoot, backupDirectory);
+        // active.json is the commit point. A bridge DLL can remain mapped in
+        // the player process after its connector exits, so Windows may keep
+        // the old directory locked. Cleanup is non-critical after activation
+        // and must never roll a valid new connector back.
         movedPreviousDirectory = false;
+        const cleanup = await cleanupActivatedConnectorBackup(
+          () => removeInside(connectorRoot, backupDirectory)
+        );
+        preserveBackupDirectory = !cleanup.cleaned;
+        if (!cleanup.cleaned) {
+          this.onLog(
+            `[连接器更新] ${connectorId} 新版本已激活；旧备份仍被播放器占用，`
+            + `已延后清理：${cleanup.error}`
+          );
+        }
       }
       return executable;
     } catch (error) {
@@ -870,7 +964,11 @@ export class ConnectorUpdater {
       if (await pathExists(stagingDirectory)) {
         await removeInside(connectorRoot, stagingDirectory);
       }
-      if (!movedPreviousDirectory && await pathExists(backupDirectory)) {
+      if (
+        !movedPreviousDirectory
+        && !preserveBackupDirectory
+        && await pathExists(backupDirectory)
+      ) {
         await removeInside(connectorRoot, backupDirectory);
       }
     }
